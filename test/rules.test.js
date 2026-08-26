@@ -7,6 +7,7 @@ import {
   FLEET,
   HIT,
   HORIZONTAL,
+  MAX_BOARD_SIZE,
   MISS,
   VERTICAL,
   canPlaceShip,
@@ -215,6 +216,21 @@ test('bounds checking follows the board size, not a hardcoded 10', () => {
   assert.ok(!canPlaceShip(small, { x: 3, y: 5, size: 4, orientation: HORIZONTAL }));
   assert.ok(!canPlaceShip(small, { x: 5, y: 3, size: 4, orientation: VERTICAL }));
   assert.throws(() => fireAt(small, { x: 6, y: 0 }), RangeError);
+});
+
+test('boards are capped at 10 a side, the largest size labels exist for', () => {
+  assert.equal(MAX_BOARD_SIZE, 10);
+  assert.equal(toLabel({ x: 9, y: 9 }), 'J10');
+
+  assert.throws(() => createBoard(11), RangeError);
+  assert.throws(() => createBoard(26), RangeError);
+  assert.throws(() => createBoard(0), RangeError);
+  assert.throws(() => createBoard(6.5), RangeError);
+  assert.equal(createBoard(10).size, 10);
+  assert.equal(createBoard(6).size, 6);
+
+  // The cap is what stops fireAt accepting a square that has no label.
+  assert.throws(() => toLabel({ x: 10, y: 0 }), RangeError);
 });
 
 test('a full fleet placed on a smaller board stays inside it', () => {

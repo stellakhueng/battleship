@@ -8,9 +8,14 @@
  *
  * Coordinates are zero-based `{ x, y }` where x is the column (0 => 'A')
  * and y is the row (0 => '1').
+ *
+ * Boards may be smaller than the standard 10x10 but never larger: squares
+ * are labelled A-J / 1-10 and there is no notation beyond that, so
+ * `createBoard` rejects anything bigger than `MAX_BOARD_SIZE`.
  */
 
 export const BOARD_SIZE = 10;
+export const MAX_BOARD_SIZE = 10;
 
 export const HORIZONTAL = 'horizontal';
 export const VERTICAL = 'vertical';
@@ -29,9 +34,9 @@ export const FLEET = Object.freeze([
 
 const COLUMNS = 'ABCDEFGHIJ';
 
-/** `{ x: 0, y: 0 }` => `'A1'`. */
+/** `{ x: 0, y: 0 }` => `'A1'`. Only squares within A-J / 1-10 have a label. */
 export function toLabel({ x, y }) {
-  if (!isOnBoard({ x, y })) throw new RangeError(`off-board coordinate ${x},${y}`);
+  if (!isOnBoard({ x, y }, MAX_BOARD_SIZE)) throw new RangeError(`off-board coordinate ${x},${y}`);
   return `${COLUMNS[x]}${y + 1}`;
 }
 
@@ -75,8 +80,11 @@ function blockedCells(cells, size) {
   return blocked;
 }
 
-/** A fresh empty board. */
+/** A fresh empty board, at most `MAX_BOARD_SIZE` squares a side. */
 export function createBoard(size = BOARD_SIZE) {
+  if (!Number.isInteger(size) || size < 1 || size > MAX_BOARD_SIZE) {
+    throw new RangeError(`board size must be an integer from 1 to ${MAX_BOARD_SIZE}, got ${size}`);
+  }
   return {
     size,
     ships: [],
