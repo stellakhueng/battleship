@@ -110,20 +110,21 @@ export function canPlaceShip(board, { x, y, size, orientation }) {
 }
 
 /**
- * Place a ship, returning a new board. Throws on an illegal placement.
+ * Place a ship on `board`, mutating it, and return the board so calls can
+ * be chained. Throws on an illegal placement.
  */
 export function placeShip(board, { name, size, x, y, orientation }) {
   if (!canPlaceShip(board, { x, y, size, orientation })) {
     throw new Error(`illegal placement for ${name} at ${x},${y} ${orientation}`);
   }
-  const ship = {
+  board.ships.push({
     name,
     size,
     orientation,
     cells: shipCells({ x, y, size, orientation }),
     hits: new Set(),
-  };
-  return { ...board, ships: [...board.ships, ship] };
+  });
+  return board;
 }
 
 export function isShipSunk(ship) {
@@ -203,7 +204,7 @@ export function placeFleetRandomly(rng, { fleet = FLEET, size = BOARD_SIZE, maxA
   const ordered = [...fleet].sort((a, b) => b.size - a.size);
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    let board = createBoard(size);
+    const board = createBoard(size);
     let ok = true;
 
     for (const { name, size: shipSize } of ordered) {
@@ -213,7 +214,7 @@ export function placeFleetRandomly(rng, { fleet = FLEET, size = BOARD_SIZE, maxA
         break;
       }
       const spot = pick(placements, rng);
-      board = placeShip(board, { name, ...spot });
+      placeShip(board, { name, ...spot });
     }
 
     if (ok) return board;

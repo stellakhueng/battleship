@@ -77,12 +77,19 @@ test('placeShip rejects an illegal placement', () => {
   );
 });
 
-test('placeShip returns a new board and leaves the original alone', () => {
+test('placeShip mutates the board it is given and returns it', () => {
   const board = createBoard();
-  const next = placeShip(board, { name: 'Destroyer', size: 2, x: 0, y: 0, orientation: HORIZONTAL });
-  assert.equal(board.ships.length, 0);
-  assert.equal(next.ships.length, 1);
-  assert.equal(next.ships[0].name, 'Destroyer');
+  const returned = placeShip(board, { name: 'Destroyer', size: 2, x: 0, y: 0, orientation: HORIZONTAL });
+
+  assert.equal(returned, board, 'the same board object comes back, so calls can be chained');
+  assert.equal(board.ships.length, 1);
+  assert.equal(board.ships[0].name, 'Destroyer');
+
+  // One board, one shot record: firing is visible however the board was reached.
+  fireAt(returned, { x: 0, y: 0 });
+  assert.equal(board.shots.size, 1);
+  assert.equal(board.ships[0].hits.size, 1);
+  assert.equal(returned.ships[0], board.ships[0]);
 });
 
 test('ships may not overlap', () => {
@@ -165,9 +172,9 @@ test('the sinking shot says which ship went down', () => {
 });
 
 test('the fleet is sunk only once every ship is down', () => {
-  let board = createBoard();
-  board = placeShip(board, { name: 'Destroyer', size: 2, x: 0, y: 0, orientation: HORIZONTAL });
-  board = placeShip(board, { name: 'Cruiser', size: 3, x: 0, y: 2, orientation: HORIZONTAL });
+  const board = createBoard();
+  placeShip(board, { name: 'Destroyer', size: 2, x: 0, y: 0, orientation: HORIZONTAL });
+  placeShip(board, { name: 'Cruiser', size: 3, x: 0, y: 2, orientation: HORIZONTAL });
 
   assert.equal(isFleetSunk(createBoard()), false, 'an empty board is not a sunk fleet');
   assert.equal(isFleetSunk(board), false);
@@ -215,7 +222,7 @@ test('legalPlacements enumerates positions and shrinks as ships land', () => {
   // 10 rows x 6 starts + 10 columns x 6 starts for a size-5 ship.
   assert.equal(legalPlacements(empty, 5).length, 120);
 
-  const board = placeShip(empty, { name: 'Carrier', size: 5, x: 0, y: 0, orientation: HORIZONTAL });
+  const board = placeShip(createBoard(), { name: 'Carrier', size: 5, x: 0, y: 0, orientation: HORIZONTAL });
   const after = legalPlacements(board, 5);
   assert.ok(after.length < 120);
   for (const spot of after) {
