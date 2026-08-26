@@ -42,8 +42,9 @@ export function fromLabel(label) {
   return { x: COLUMNS.indexOf(match[1].toUpperCase()), y: Number(match[2]) - 1 };
 }
 
-export function isOnBoard({ x, y }) {
-  return Number.isInteger(x) && Number.isInteger(y) && x >= 0 && y >= 0 && x < BOARD_SIZE && y < BOARD_SIZE;
+/** Is the square on a board of `size` squares a side? */
+export function isOnBoard({ x, y }, size = BOARD_SIZE) {
+  return Number.isInteger(x) && Number.isInteger(y) && x >= 0 && y >= 0 && x < size && y < size;
 }
 
 function key(x, y) {
@@ -60,14 +61,14 @@ export function shipCells({ x, y, size, orientation }) {
 }
 
 /** The ship's own squares plus the one-square ring around them, clipped to the board. */
-function blockedCells(cells) {
+function blockedCells(cells, size) {
   const blocked = new Set();
   for (const cell of cells) {
     for (let dy = -1; dy <= 1; dy += 1) {
       for (let dx = -1; dx <= 1; dx += 1) {
         const x = cell.x + dx;
         const y = cell.y + dy;
-        if (isOnBoard({ x, y })) blocked.add(key(x, y));
+        if (isOnBoard({ x, y }, size)) blocked.add(key(x, y));
       }
     }
   }
@@ -88,7 +89,7 @@ export function createBoard(size = BOARD_SIZE) {
 function occupiedAndAdjacent(board) {
   const blocked = new Set();
   for (const ship of board.ships) {
-    for (const k of blockedCells(ship.cells)) blocked.add(k);
+    for (const k of blockedCells(ship.cells, board.size)) blocked.add(k);
   }
   return blocked;
 }
@@ -102,7 +103,7 @@ export function canPlaceShip(board, { x, y, size, orientation }) {
   if (orientation !== HORIZONTAL && orientation !== VERTICAL) return false;
 
   const cells = shipCells({ x, y, size, orientation });
-  if (!cells.every(isOnBoard)) return false;
+  if (!cells.every((cell) => isOnBoard(cell, board.size))) return false;
 
   const blocked = occupiedAndAdjacent(board);
   return cells.every((cell) => !blocked.has(key(cell.x, cell.y)));
@@ -145,7 +146,7 @@ function shipAt(board, x, y) {
  * and `shipName` names the ship that was hit (null on a miss).
  */
 export function fireAt(board, { x, y }) {
-  if (!isOnBoard({ x, y })) throw new RangeError(`off-board shot ${x},${y}`);
+  if (!isOnBoard({ x, y }, board.size)) throw new RangeError(`off-board shot ${x},${y}`);
 
   const k = key(x, y);
   const coordinate = toLabel({ x, y });

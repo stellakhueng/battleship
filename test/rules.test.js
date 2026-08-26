@@ -14,6 +14,7 @@ import {
   fireAt,
   fromLabel,
   isFleetSunk,
+  isOnBoard,
   isShipSunk,
   legalPlacements,
   placeFleetRandomly,
@@ -178,6 +179,35 @@ test('the fleet is sunk only once every ship is down', () => {
   assert.equal(last.sunk, true);
   assert.equal(last.shipName, 'Cruiser');
   assert.equal(isFleetSunk(board), true);
+});
+
+test('bounds checking follows the board size, not a hardcoded 10', () => {
+  assert.ok(isOnBoard({ x: 9, y: 9 }));
+  assert.ok(isOnBoard({ x: 5, y: 5 }, 6));
+  assert.ok(!isOnBoard({ x: 6, y: 0 }, 6));
+
+  const small = createBoard(6);
+  assert.ok(canPlaceShip(small, { x: 2, y: 5, size: 4, orientation: HORIZONTAL }));
+  assert.ok(!canPlaceShip(small, { x: 3, y: 5, size: 4, orientation: HORIZONTAL }));
+  assert.ok(!canPlaceShip(small, { x: 5, y: 3, size: 4, orientation: VERTICAL }));
+  assert.throws(() => fireAt(small, { x: 6, y: 0 }), RangeError);
+});
+
+test('a full fleet placed on a smaller board stays inside it', () => {
+  const size = 8;
+  for (let seed = 1; seed <= 50; seed += 1) {
+    const board = placeFleetRandomly(createSeededRng(seed), { size });
+    assert.equal(board.size, size);
+    assert.equal(board.ships.length, 5, `seed ${seed}: fleet incomplete`);
+    for (const ship of board.ships) {
+      for (const cell of ship.cells) {
+        assert.ok(
+          isOnBoard(cell, size),
+          `seed ${seed}: ${ship.name} outside the ${size}x${size} board at ${cell.x},${cell.y}`,
+        );
+      }
+    }
+  }
 });
 
 test('legalPlacements enumerates positions and shrinks as ships land', () => {
