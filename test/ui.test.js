@@ -181,6 +181,23 @@ test('hits, misses and sunk ships are drawn by shape, not colour alone', () => {
   assert.equal(root.querySelector('.roster[data-side="player"] .roster-count').textContent, '1 of 5 lost');
 });
 
+test('an empty shot log says so rather than showing bare headings', () => {
+  const { root, app } = open(7);
+
+  assert.equal(root.querySelector('.log-table'), null, 'no table until there is something in it');
+  assert.equal(root.querySelector('.log-empty').textContent, 'No shots yet');
+
+  app.state.log.push({ turn: 1, who: 'player', square: 'A1', result: 'miss', sunkShip: null });
+  app.draw();
+
+  assert.equal(root.querySelector('.log-empty'), null);
+  assert.deepEqual(
+    [...root.querySelectorAll('.log-table th')].map((node) => node.textContent),
+    ['Turn', 'Who', 'Square', 'Result'],
+  );
+  assert.equal(root.querySelector('.log-scroll').style.getPropertyValue('--log-rows'), '6');
+});
+
 function labelOf({ x, y }) {
   return `${'ABCDEFGHIJ'[x]}${y + 1}`;
 }

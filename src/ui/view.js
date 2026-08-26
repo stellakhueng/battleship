@@ -232,8 +232,15 @@ function resultBadge(doc, entry) {
 /** A ruled table, newest first, so a shot can be found by scanning a column. */
 function buildLog(doc, state) {
   const wrapper = el(doc, 'section', 'log');
+  wrapper.append(el(doc, 'h3', 'log-heading', 'Shot log'));
+
+  // Headings with nothing under them read as a broken table, so hold them back.
+  if (state.log.length === 0) {
+    wrapper.append(el(doc, 'p', 'log-empty', 'No shots yet'));
+    return wrapper;
+  }
+
   const table = el(doc, 'table', 'log-table');
-  table.style.setProperty('--log-rows', String(LOG_ROWS_VISIBLE));
 
   const head = el(doc, 'thead');
   const headRow = el(doc, 'tr');
@@ -259,8 +266,8 @@ function buildLog(doc, state) {
   table.append(body);
 
   const scroller = el(doc, 'div', 'log-scroll');
+  scroller.style.setProperty('--log-rows', String(LOG_ROWS_VISIBLE));
   scroller.append(table);
-  wrapper.append(el(doc, 'h3', 'log-heading', 'Shot log'));
   wrapper.append(scroller);
   return wrapper;
 }
