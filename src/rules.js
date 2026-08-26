@@ -135,6 +135,16 @@ export function isFleetSunk(board) {
   return board.ships.length > 0 && board.ships.every(isShipSunk);
 }
 
+/**
+ * Is the whole fleet on the board? The interface uses this to decide when
+ * setting up is finished and play can start.
+ */
+export function isFleetPlaced(board, fleet = FLEET) {
+  const expected = fleet.map((ship) => `${ship.name}/${ship.size}`).sort();
+  const placed = board.ships.map((ship) => `${ship.name}/${ship.size}`).sort();
+  return placed.length === expected.length && expected.every((entry, i) => entry === placed[i]);
+}
+
 function shipAt(board, x, y) {
   return board.ships.find((ship) => ship.cells.some((cell) => cell.x === x && cell.y === y));
 }

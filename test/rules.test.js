@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   ALREADY_FIRED,
   BOARD_SIZE,
+  FLEET,
   HIT,
   HORIZONTAL,
   MISS,
@@ -13,6 +14,7 @@ import {
   createSeededRng,
   fireAt,
   fromLabel,
+  isFleetPlaced,
   isFleetSunk,
   isOnBoard,
   isShipSunk,
@@ -188,6 +190,21 @@ test('the fleet is sunk only once every ship is down', () => {
   assert.equal(isFleetSunk(board), true);
 });
 
+test('isFleetPlaced reports when setting up is finished', () => {
+  const board = createBoard();
+  const rng = createSeededRng(7);
+
+  for (const { name, size } of FLEET) {
+    assert.equal(isFleetPlaced(board), false);
+    const spots = legalPlacements(board, size);
+    placeShip(board, { name, ...spots[Math.floor(rng() * spots.length)] });
+  }
+
+  assert.equal(board.ships.length, 5);
+  assert.equal(isFleetPlaced(board), true);
+  assert.equal(isFleetPlaced(placeFleetRandomly(createSeededRng(3))), true);
+});
+
 test('bounds checking follows the board size, not a hardcoded 10', () => {
   assert.ok(isOnBoard({ x: 9, y: 9 }));
   assert.ok(isOnBoard({ x: 5, y: 5 }, 6));
@@ -205,7 +222,7 @@ test('a full fleet placed on a smaller board stays inside it', () => {
   for (let seed = 1; seed <= 50; seed += 1) {
     const board = placeFleetRandomly(createSeededRng(seed), { size });
     assert.equal(board.size, size);
-    assert.equal(board.ships.length, 5, `seed ${seed}: fleet incomplete`);
+    assert.ok(isFleetPlaced(board), `seed ${seed}: fleet incomplete`);
     for (const ship of board.ships) {
       for (const cell of ship.cells) {
         assert.ok(
