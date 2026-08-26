@@ -1,0 +1,469 @@
+/* Battleship. One column on a narrow screen, two grids side by side otherwise. */
+
+:root {
+  --page: #edf5fb;
+  --sea: #c7e6f7;
+  --grid-line: rgba(74, 135, 174, 0.45);
+  --ink: #12395b;
+  --text: #0f2e47;
+  --muted: #5a87a5;
+  --ruler: #1e4c6b;
+  --hit: #b02a22;
+  --sunk-wash: #f4c3be;
+  --sunk-hull: #8a9aa6;
+  --newest: #d98014;
+  --good: #2f7f5b;
+  --enemy-brown: #8a5a54;
+  --row-stripe: #dcebf6;
+  --square: clamp(1.6rem, 3.4vw, 2.3rem);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 1.5rem 1rem 3rem;
+  background: var(--page);
+  color: var(--text);
+  font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.app {
+  max-width: 62rem;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.title {
+  margin: 0;
+  text-align: center;
+  font-size: clamp(1.8rem, 5vw, 2.6rem);
+  letter-spacing: 0.06em;
+  color: var(--ink);
+}
+
+.status-banner {
+  margin: 0 auto;
+  padding: 0.6rem 1.2rem;
+  max-width: 42rem;
+  text-align: center;
+  background: var(--sea);
+  border-radius: 999px;
+  color: var(--text);
+}
+
+/* Grids ------------------------------------------------------------- */
+
+.boards,
+.rosters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem;
+  justify-items: center;
+}
+
+.board-heading {
+  text-align: center;
+  margin-bottom: 0.5rem;
+}
+
+.board-heading h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--ink);
+}
+
+.subtitle {
+  margin: 0.1rem 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1.3rem repeat(10, var(--square));
+  gap: 0;
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  background: var(--sea);
+  padding: 0.15rem 0.15rem 0.15rem 0;
+  width: max-content;
+}
+
+.ruler {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--ruler);
+  min-height: 1.1rem;
+}
+
+.square {
+  position: relative;
+  width: var(--square);
+  height: var(--square);
+  padding: 0;
+  background: var(--sea);
+  border: 1px solid var(--grid-line);
+  color: inherit;
+  cursor: pointer;
+}
+
+.square:disabled {
+  cursor: default;
+}
+
+/* A ship is in hand: the next click on your own grid puts it down. */
+.square.placing {
+  cursor: crosshair;
+}
+
+.square:focus-visible {
+  outline: 3px solid var(--newest);
+  outline-offset: -1px;
+  z-index: 3;
+}
+
+/* A ship is one bar across its squares: rounded outer ends, square joins. */
+.hull {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.hull-h.hull-start {
+  border-top-left-radius: 999px;
+  border-bottom-left-radius: 999px;
+}
+
+.hull-h.hull-end {
+  border-top-right-radius: 999px;
+  border-bottom-right-radius: 999px;
+}
+
+.hull-v.hull-start {
+  border-top-left-radius: 999px;
+  border-top-right-radius: 999px;
+}
+
+.hull-v.hull-end {
+  border-bottom-left-radius: 999px;
+  border-bottom-right-radius: 999px;
+}
+
+.hull-sunk {
+  background: var(--sunk-hull);
+  border-color: var(--sunk-hull);
+}
+
+.square.sunk {
+  box-shadow: inset 0 0 0 999px var(--sunk-wash);
+}
+
+.square.sunk.hull {
+  box-shadow: none;
+  background: var(--sunk-hull);
+}
+
+/* Exactly one ring per grid: the newest shot, otherwise invisible among forty marks. */
+.square.newest {
+  outline: 3px solid var(--newest);
+  outline-offset: -3px;
+  z-index: 2;
+}
+
+.mark {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.mark-hit line {
+  stroke: var(--hit);
+  stroke-width: 14;
+  stroke-linecap: round;
+}
+
+.mark-miss circle {
+  fill: var(--ink);
+}
+
+/* Legend ------------------------------------------------------------ */
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.legend-swatch {
+  position: relative;
+  display: inline-block;
+  width: 1.4rem;
+  height: 1.1rem;
+  background: var(--sea);
+  border: 1px solid var(--grid-line);
+}
+
+.legend-swatch.hull {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+/* Sunk shows both halves of the mark: pink wash under a grey hull. */
+.legend-swatch.hull-sunk {
+  background: var(--sunk-wash);
+  border-color: var(--sunk-wash);
+}
+
+.legend-swatch.hull-sunk::after {
+  content: '';
+  position: absolute;
+  inset: 25% 10%;
+  border-radius: 999px;
+  background: var(--sunk-hull);
+}
+
+/* Rosters ----------------------------------------------------------- */
+
+.roster {
+  width: 100%;
+  max-width: 22rem;
+}
+
+.roster-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--grid-line);
+  padding-bottom: 0.3rem;
+}
+
+.roster-heading h3 {
+  margin: 0;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+}
+
+.roster-count {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.roster-count.is-bad {
+  color: var(--hit);
+}
+
+.roster-count.is-good {
+  color: var(--good);
+}
+
+.roster-list {
+  margin: 0.4rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.roster-row {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.roster-row.is-sunk {
+  opacity: 0.45;
+}
+
+.roster-row.is-sunk .roster-name {
+  text-decoration: line-through;
+}
+
+.roster-blocks {
+  display: flex;
+  gap: 3px;
+}
+
+/* Blocks match the ship's real length, so nobody has to know what a Cruiser is. */
+.roster-block {
+  width: 0.85rem;
+  height: 0.7rem;
+  border-radius: 3px;
+  background: var(--ink);
+}
+
+.roster-block.is-hit {
+  background: var(--hit);
+}
+
+.roster-status {
+  font-size: 0.75rem;
+  color: var(--muted);
+  min-width: 3.5rem;
+  text-align: right;
+}
+
+/* Shot log and controls --------------------------------------------- */
+
+.bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.log-heading {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+}
+
+.log-scroll {
+  max-height: calc(var(--log-rows, 6) * 1.9rem + 2rem);
+  overflow-y: auto;
+  border: 1px solid var(--grid-line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.log-table th {
+  position: sticky;
+  top: 0;
+  background: #fff;
+  text-align: left;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--grid-line);
+}
+
+.log-table td {
+  padding: 0.3rem 0.6rem;
+  border-bottom: 1px solid var(--grid-line);
+}
+
+.log-table tbody tr:nth-child(odd) {
+  background: var(--row-stripe);
+}
+
+.log-turn {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.log-who.is-you {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.log-who.is-enemy {
+  color: var(--enemy-brown);
+  font-weight: 600;
+}
+
+/* Monospace so a column of coordinates can be scanned on its own. */
+.log-square {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.badge.is-miss {
+  background: #c8dcea;
+  color: var(--ink);
+}
+
+.badge.is-hit {
+  background: #f0b8b2;
+  color: #7d1c16;
+}
+
+.badge.is-sank {
+  background: var(--hit);
+  color: #fff;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.control {
+  padding: 0.55rem 1.1rem;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.control:hover:not(:disabled) {
+  background: var(--sea);
+}
+
+.control:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.control:focus-visible,
+.control:focus-visible {
+  outline: 3px solid var(--newest);
+  outline-offset: 2px;
+}
+
+@media (max-width: 46rem) {
+  .boards,
+  .rosters,
+  .bottom {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .controls {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
