@@ -22,6 +22,8 @@ import {
   legalPlacements,
   placeFleetRandomly,
   placeShip,
+  removeShip,
+  shipAt,
   shipCells,
   toLabel,
 } from '../src/rules.js';
@@ -248,6 +250,44 @@ test('a full fleet placed on a smaller board stays inside it', () => {
       }
     }
   }
+});
+
+test('shipAt finds the ship under a square', () => {
+  const board = placeShip(createBoard(), { name: 'Cruiser', size: 3, x: 4, y: 4, orientation: HORIZONTAL });
+  assert.equal(shipAt(board, { x: 5, y: 4 }), board.ships[0]);
+  assert.equal(shipAt(board, { x: 7, y: 4 }), null);
+  assert.equal(shipAt(createBoard(), { x: 0, y: 0 }), null);
+});
+
+test('a ship can be picked up and put down again without duplicating it', () => {
+  const board = placeShip(createBoard(), { name: 'Cruiser', size: 3, x: 4, y: 4, orientation: HORIZONTAL });
+  placeShip(board, { name: 'Destroyer', size: 2, x: 0, y: 0, orientation: HORIZONTAL });
+
+  const picked = shipAt(board, { x: 4, y: 4 });
+  const removed = removeShip(board, picked.name);
+
+  assert.equal(removed, picked);
+  assert.equal(board.ships.length, 1);
+  assert.deepEqual(board.ships.map((s) => s.name), ['Destroyer']);
+  assert.equal(shipAt(board, { x: 4, y: 4 }), null);
+
+  // The square it used to block is free again, and so is its old ring.
+  assert.ok(canPlaceShip(board, { x: 4, y: 4, size: 3, orientation: VERTICAL }));
+
+  placeShip(board, { name: 'Cruiser', size: 3, x: 7, y: 7, orientation: VERTICAL });
+  assert.equal(board.ships.length, 2);
+  assert.equal(board.ships.filter((s) => s.name === 'Cruiser').length, 1, 'no duplicate Cruiser left behind');
+  assert.deepEqual(shipAt(board, { x: 7, y: 9 }).cells, [
+    { x: 7, y: 7 },
+    { x: 7, y: 8 },
+    { x: 7, y: 9 },
+  ]);
+});
+
+test('removing a ship that is not on the board changes nothing', () => {
+  const board = placeShip(createBoard(), { name: 'Cruiser', size: 3, x: 4, y: 4, orientation: HORIZONTAL });
+  assert.equal(removeShip(board, 'Carrier'), null);
+  assert.equal(board.ships.length, 1);
 });
 
 test('legalPlacements enumerates positions and shrinks as ships land', () => {

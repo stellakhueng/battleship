@@ -153,8 +153,24 @@ export function isFleetPlaced(board, fleet = FLEET) {
   return placed.length === expected.length && expected.every((entry, i) => entry === placed[i]);
 }
 
-function shipAt(board, x, y) {
-  return board.ships.find((ship) => ship.cells.some((cell) => cell.x === x && cell.y === y));
+/**
+ * The ship occupying a square, or null. The setup interface uses this to
+ * pick up the ship under a click.
+ */
+export function shipAt(board, { x, y }) {
+  return board.ships.find((ship) => ship.cells.some((cell) => cell.x === x && cell.y === y)) ?? null;
+}
+
+/**
+ * Take a ship back off the board by name, so it can be placed again.
+ * Returns the removed ship, or null if it was not on the board. Any shots
+ * already fired at its squares stay in the record.
+ */
+export function removeShip(board, name) {
+  const index = board.ships.findIndex((ship) => ship.name === name);
+  if (index === -1) return null;
+  const [removed] = board.ships.splice(index, 1);
+  return removed;
 }
 
 /**
@@ -173,7 +189,7 @@ export function fireAt(board, { x, y }) {
     return { result: ALREADY_FIRED, sunk: false, shipName: null, coordinate };
   }
 
-  const ship = shipAt(board, x, y);
+  const ship = shipAt(board, { x, y });
   if (!ship) {
     board.shots.set(k, MISS);
     return { result: MISS, sunk: false, shipName: null, coordinate };
