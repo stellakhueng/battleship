@@ -12,6 +12,7 @@
   --sunk-wash: #f4c3be;
   --sunk-hull: #8a9aa6;
   --newest: #d98014;
+  --focus: #0b7285;
   --good: #2f7f5b;
   --enemy-brown: #8a5a54;
   --row-stripe: #dcebf6;
@@ -125,9 +126,11 @@ body {
   cursor: crosshair;
 }
 
+/* Focus sits outside the square, dashed and teal, so it never reads as the newest-shot ring. */
 .square:focus-visible {
-  outline: 3px solid var(--newest);
-  outline-offset: -1px;
+  outline: 3px dashed var(--focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--page);
   z-index: 3;
 }
 
@@ -484,9 +487,8 @@ body {
   cursor: default;
 }
 
-.control:focus-visible,
 .control:focus-visible {
-  outline: 3px solid var(--newest);
+  outline: 3px dashed var(--focus);
   outline-offset: 2px;
 }
 

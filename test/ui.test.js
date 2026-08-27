@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 
 import { FLEET, createSeededRng, isFleetPlaced, isFleetSunk, shipAt } from '../src/rules.js';
@@ -416,6 +417,50 @@ test('a queued computer shot is cancelled rather than landing on a fresh board',
 
   assert.equal(app.state.turn, 1, 'the cancelled reply never fired');
   assert.equal(app.state.player.shots.size, 0);
+});
+
+test('a focused square and the newest-shot square are told apart', () => {
+  const { root, doc, dom, app, timers } = play(14);
+
+  square(root, 'enemy', 'E4').click();
+  timers.flush();
+
+  const newest = grid(root, 'enemy').querySelector('.square.newest');
+  const focused = square(root, 'enemy', 'H8');
+  focused.focus();
+
+  assert.equal(newest.dataset.square, 'E4');
+  assert.equal(doc.activeElement, focused);
+  assert.ok(!focused.classList.contains('newest'), 'the two are different squares here');
+  assert.equal(grid(root, 'enemy').querySelectorAll('.square.newest').length, 1);
+
+  // The two rings must not look alike: different colour and different stroke.
+  const style = doc.createElement('style');
+  style.textContent = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+  doc.head.append(style);
+
+  const rules = [...style.sheet.cssRules];
+  const outlineOf = (selector) => {
+    const rule = rules.find((entry) => entry.selectorText === selector);
+    assert.ok(rule, `${selector} has no rule`);
+    return {
+      colour: rule.style.getPropertyValue('outline-color') || rule.style.getPropertyValue('outline'),
+      style: rule.style.getPropertyValue('outline-style') || rule.style.getPropertyValue('outline'),
+      offset: rule.style.getPropertyValue('outline-offset'),
+    };
+  };
+
+  const focus = outlineOf('.square:focus-visible');
+  const ring = outlineOf('.square.newest');
+  const colourOf = (declaration) => /var\((--[a-z-]+)\)/.exec(declaration.colour)?.[1];
+
+  assert.notEqual(colourOf(focus), colourOf(ring), 'focus and the newest shot share a colour');
+  assert.match(focus.style, /dashed/);
+  assert.match(ring.style, /solid/);
+  assert.ok(focus.offset.startsWith('-') === false && ring.offset.startsWith('-'), 'focus sits outside, the ring inside');
+
+  dom.window.close();
+  app.destroy();
 });
 
 test('200 games played through the interface never repeat a shot, overrun or crash', () => {
