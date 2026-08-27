@@ -282,6 +282,12 @@ body {
   color: var(--good);
 }
 
+.roster-hits {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
 .roster-list {
   margin: 0.4rem 0 0;
   padding: 0;

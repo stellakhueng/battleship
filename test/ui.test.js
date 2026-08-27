@@ -120,7 +120,7 @@ test('a roster row draws one block per square of that ship', () => {
       const row = root.querySelector(`.roster[data-side="${side}"] .roster-row[data-ship="${name}"]`);
       assert.ok(row, `${side} roster is missing ${name}`);
       assert.equal(row.querySelectorAll('.roster-block').length, size, `${side} ${name}`);
-      assert.equal(row.querySelector('.roster-status').textContent, `${size} left`);
+      assert.equal(row.querySelector('.roster-status').textContent, side === 'player' ? `${size} left` : 'afloat');
     }
   }
 
@@ -417,6 +417,48 @@ test('a queued computer shot is cancelled rather than landing on a fresh board',
 
   assert.equal(app.state.turn, 1, 'the cancelled reply never fired');
   assert.equal(app.state.player.shots.size, 0);
+});
+
+test('their roster shows no damage on a ship until it sinks', () => {
+  for (let seed = 1; seed <= 20; seed += 1) {
+    const { root, app, timers } = play(seed);
+    const rng = createSeededRng(seed + 900);
+
+    for (let shot = 0; shot < 40 && !isFleetSunk(app.state.enemy); shot += 1) {
+      const open = squares(root, 'enemy').filter((node) => !node.disabled);
+      open[Math.floor(rng() * open.length)].click();
+      timers.flush();
+
+      for (const ship of app.state.enemy.ships) {
+        const row = root.querySelector(`.roster[data-side="enemy"] .roster-row[data-ship="${ship.name}"]`);
+        const sunk = ship.hits.size === ship.size;
+        const shown = row.querySelectorAll('.roster-block.is-hit').length;
+
+        if (sunk) {
+          assert.equal(shown, ship.size, `seed ${seed}: a sunk ${ship.name} should be all red`);
+          assert.equal(row.querySelector('.roster-status').textContent, 'SUNK');
+        } else {
+          assert.equal(shown, 0, `seed ${seed}: ${ship.name} leaks ${ship.hits.size} hits before sinking`);
+          assert.equal(row.querySelector('.roster-status').textContent, 'afloat');
+        }
+      }
+
+      // The total is fair game: it says nothing about which ship was hit.
+      const landed = app.state.enemy.ships.reduce((total, ship) => total + ship.hits.size, 0);
+      const line = root.querySelector('.roster[data-side="enemy"] .roster-hits').textContent;
+      assert.equal(line, `${landed} hit${landed === 1 ? '' : 's'} landed`);
+    }
+
+    // Your own fleet is yours to see, so it keeps per-ship damage.
+    const damaged = app.state.player.ships.find((ship) => ship.hits.size > 0 && ship.hits.size < ship.size);
+    if (damaged) {
+      const row = root.querySelector(`.roster[data-side="player"] .roster-row[data-ship="${damaged.name}"]`);
+      assert.equal(row.querySelectorAll('.roster-block.is-hit').length, damaged.hits.size);
+      assert.equal(row.querySelector('.roster-status').textContent, `${damaged.size - damaged.hits.size} left`);
+    }
+
+    app.destroy();
+  }
 });
 
 test('a focused square and the newest-shot square are told apart', () => {
