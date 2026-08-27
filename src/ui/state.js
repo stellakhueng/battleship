@@ -5,16 +5,20 @@
  * from the rules layer; this module only decides what the interface is
  * allowed to do next. Randomness is injected, as everywhere else.
  *
- * Part one covers setup only: firing and the turn loop come later, but
- * the shape of the state (shot log, newest shot per grid) is already here
- * so the view can draw a game in progress.
+ * Turns alternate strictly, one shot each, counted by `turn`. While the
+ * computer is thinking the state is `busy` and every player move is
+ * refused here as well as disabled in the view, so a stray click cannot
+ * steal a turn. The endgame is not built yet.
  */
 
 import {
+  ALREADY_FIRED,
   FLEET,
+  HIT,
   HORIZONTAL,
   VERTICAL,
   canPlaceShip,
+  fireAt,
   isFleetPlaced,
   placeFleetRandomly,
   placeShip,
@@ -26,6 +30,9 @@ import { createOpponent } from '../ai.js';
 
 export const SETUP = 'setup';
 export const PLAYING = 'playing';
+
+export const PLAYER = 'player';
+export const ENEMY = 'enemy';
 
 const READY = 'Your fleet is ready. Scatter it again, click a ship to move it, or start the game.';
 
@@ -42,6 +49,10 @@ export function createGame({ rng = Math.random } = {}) {
     /** Newest shot per grid, so the view can ring exactly one square each. */
     lastShot: { player: null, enemy: null },
     log: [],
+    /** One per shot, whoever fired it: the log reads 1 You, 2 Enemy, 3 You. */
+    turn: 0,
+    /** The computer is mid-turn; the player may not move. */
+    busy: false,
     message: READY,
   };
 }
@@ -131,6 +142,75 @@ export function startGame(state) {
 
   state.phase = PLAYING;
   state.selected = null;
+  state.busy = false;
   state.message = 'Your turn. Fire at the enemy grid.';
   return state;
+}
+
+/** May the player fire right now? */
+export function canPlayerFire(state) {
+  return state.phase === PLAYING && !state.busy;
+}
+
+function logShot(state, who, square, outcome) {
+  state.turn += 1;
+  state.lastShot[who === PLAYER ? ENEMY : PLAYER] = { ...square };
+  state.log.push({
+    turn: state.turn,
+    who,
+    square: outcome.coordinate,
+    result: outcome.result,
+    sunkShip: outcome.sunk ? outcome.shipName : null,
+  });
+}
+
+/**
+ * The player's shot at the enemy grid. Returns the outcome, or null when
+ * the shot was refused — a refused shot costs no turn and hands nothing
+ * to the computer.
+ */
+export function playerFire(state, square) {
+  if (!canPlayerFire(state)) return null;
+
+  const outcome = fireAt(state.enemy, square);
+  if (outcome.result === ALREADY_FIRED) {
+    state.message = `You have already fired at ${outcome.coordinate}. Pick another square.`;
+    return null;
+  }
+
+  logShot(state, PLAYER, square, outcome);
+  // Locked from here until the computer's reply has been drawn.
+  state.busy = true;
+  state.message = outcome.sunk
+    ? `You sank their ${outcome.shipName}! Enemy is taking their shot.`
+    : `${outcome.result === HIT ? `You hit ${outcome.coordinate}.` : `You missed at ${outcome.coordinate}.`} Enemy is taking their shot.`;
+  return outcome;
+}
+
+/**
+ * The computer's reply. It picks a square knowing only what it has been
+ * told, and is told the result the same way — it never sees the board.
+ */
+export function enemyFire(state) {
+  if (state.phase !== PLAYING) return null;
+
+  const square = state.opponent.nextShot();
+  const outcome = fireAt(state.player, square);
+  if (outcome.result === ALREADY_FIRED) throw new Error(`the opponent fired at ${outcome.coordinate} twice`);
+
+  const ship = outcome.sunk ? shipAt(state.player, square) : null;
+  state.opponent.record(square, {
+    result: outcome.result,
+    sunk: outcome.sunk,
+    shipName: outcome.shipName ?? undefined,
+    shipSize: ship?.size,
+    shipCells: ship?.cells,
+  });
+
+  logShot(state, ENEMY, square, outcome);
+  state.busy = false;
+  state.message = outcome.sunk
+    ? `They sank your ${outcome.shipName}! Your turn.`
+    : `${outcome.result === HIT ? `They hit ${outcome.coordinate}.` : `They missed at ${outcome.coordinate}.`} Your turn.`;
+  return outcome;
 }
