@@ -7,7 +7,7 @@
  */
 
 import { BOARD_SIZE, FLEET, HIT, MISS, isShipSunk, shipAt, toLabel } from '../rules.js';
-import { PLAYING, SETUP } from './state.js';
+import { PLAYING, SETUP, canPlayerFire } from './state.js';
 
 const COLUMNS = 'ABCDEFGHIJ';
 const LOG_ROWS_VISIBLE = 6;
@@ -101,7 +101,9 @@ function buildGrid(doc, state, side, handlers) {
   const board = isPlayer ? state.player : state.enemy;
   const revealShips = isPlayer;
   const newest = state.lastShot[side];
-  const disabled = isPlayer ? state.phase !== SETUP : state.phase !== PLAYING;
+  // Own ships move during setup only; the enemy grid opens up on your turn
+  // and shuts again the moment your shot lands.
+  const closed = isPlayer ? state.phase !== SETUP : !canPlayerFire(state);
 
   const grid = el(doc, 'div', 'grid');
   grid.dataset.side = side;
@@ -121,6 +123,10 @@ function buildGrid(doc, state, side, handlers) {
       button.dataset.square = toLabel(square);
       button.dataset.x = String(x);
       button.dataset.y = String(y);
+      // A square already fired at can never be acted on: disable it rather
+      // than let a keyboard user tab through dead controls.
+      const spent = !isPlayer && view.shot !== null;
+      const disabled = closed || spent;
       button.disabled = disabled;
       button.setAttribute('aria-label', squareLabel(view, square, { revealShips }));
 
