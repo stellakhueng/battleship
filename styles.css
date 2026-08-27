@@ -12,6 +12,7 @@
   --sunk-wash: #f4c3be;
   --sunk-hull: #8a9aa6;
   --newest: #d98014;
+  --focus: #0b7285;
   --good: #2f7f5b;
   --enemy-brown: #8a5a54;
   --row-stripe: #dcebf6;
@@ -120,13 +121,16 @@ body {
 }
 
 /* A ship is in hand: the next click on your own grid puts it down. */
+.grid.placing,
 .square.placing {
   cursor: crosshair;
 }
 
+/* Focus sits outside the square, dashed and teal, so it never reads as the newest-shot ring. */
 .square:focus-visible {
-  outline: 3px solid var(--newest);
-  outline-offset: -1px;
+  outline: 3px dashed var(--focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--page);
   z-index: 3;
 }
 
@@ -278,6 +282,12 @@ body {
   color: var(--good);
 }
 
+.roster-hits {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
 .roster-list {
   margin: 0.4rem 0 0;
   padding: 0;
@@ -301,6 +311,26 @@ body {
 
 .roster-row.is-sunk .roster-name {
   text-decoration: line-through;
+}
+
+/* The held ship, marked where the eye already is rather than only in the banner. */
+.roster-row.is-held {
+  outline: 2px solid var(--newest);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.roster-row.is-held .roster-name {
+  font-weight: 700;
+}
+
+.roster-row.is-held .roster-block {
+  background: var(--newest);
+}
+
+.roster-row.is-held .roster-status {
+  color: var(--newest);
+  font-weight: 700;
 }
 
 .roster-blocks {
@@ -463,9 +493,8 @@ body {
   cursor: default;
 }
 
-.control:focus-visible,
 .control:focus-visible {
-  outline: 3px solid var(--newest);
+  outline: 3px dashed var(--focus);
   outline-offset: 2px;
 }
 

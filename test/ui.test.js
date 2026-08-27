@@ -1,23 +1,64 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 
-import { FLEET, createSeededRng, isFleetPlaced, shipAt } from '../src/rules.js';
+import { FLEET, createSeededRng, isFleetPlaced, isFleetSunk, shipAt } from '../src/rules.js';
 import { mount } from '../src/ui/main.js';
 
 const SHIP_SQUARES = FLEET.reduce((total, ship) => total + ship.size, 0); // 17
 
 /** A mounted interface driven through the real DOM, with a seeded layout. */
-function open(seed = 1) {
+function open(seed = 1, options = {}) {
   const dom = new JSDOM('<!doctype html><div id="app"></div>');
   const root = dom.window.document.getElementById('app');
-  const app = mount(root, { rng: createSeededRng(seed) });
+  const app = mount(root, { rng: createSeededRng(seed), ...options });
   return { dom, root, app, doc: dom.window.document };
+}
+
+/**
+ * Timers the test drives by hand, so the computer's reply happens exactly
+ * when the test says so and the game runs synchronously.
+ */
+function manualTimers() {
+  const queued = new Map();
+  let next = 1;
+  return {
+    setTimeout(fn) {
+      const id = next;
+      next += 1;
+      queued.set(id, fn);
+      return id;
+    },
+    clearTimeout(id) {
+      queued.delete(id);
+    },
+    get waiting() {
+      return queued.size;
+    },
+    /** Let the computer take its turn. */
+    flush() {
+      for (const [id, fn] of [...queued]) {
+        queued.delete(id);
+        fn();
+      }
+    },
+  };
+}
+
+/** A game already under way, with the computer's replies under test control. */
+function play(seed = 1) {
+  const timers = manualTimers();
+  const opened = open(seed, { timers });
+  opened.root.querySelector('#start').click();
+  return { ...opened, timers };
 }
 
 const grid = (root, side) => root.querySelector(`.grid[data-side="${side}"]`);
 const squares = (root, side) => [...grid(root, side).querySelectorAll('.square')];
 const square = (root, side, label) => grid(root, side).querySelector(`.square[data-square="${label}"]`);
+const firstEnabled = (root, side) => squares(root, side).find((node) => !node.disabled);
+const shotsBy = (state, who) => state.log.filter((entry) => entry.who === who);
 
 test('both grids are drawn as 100 squares with rulers A-J and 1-10', () => {
   const { root } = open();
@@ -79,7 +120,7 @@ test('a roster row draws one block per square of that ship', () => {
       const row = root.querySelector(`.roster[data-side="${side}"] .roster-row[data-ship="${name}"]`);
       assert.ok(row, `${side} roster is missing ${name}`);
       assert.equal(row.querySelectorAll('.roster-block').length, size, `${side} ${name}`);
-      assert.equal(row.querySelector('.roster-status').textContent, `${size} left`);
+      assert.equal(row.querySelector('.roster-status').textContent, side === 'player' ? `${size} left` : 'afloat');
     }
   }
 
@@ -115,6 +156,40 @@ test('clicking one of your ships picks it up instead of adding a second copy', (
   assert.equal(new Set(app.state.player.ships.map((ship) => ship.name)).size, FLEET.length);
   assert.ok(isFleetPlaced(app.state.player));
   assert.equal(root.querySelector('#start').disabled, false);
+});
+
+test('a held ship is marked on its roster row and the grid, not only in the banner', () => {
+  const { root, app } = open(11);
+
+  const occupied = squares(root, 'player').find((node) => node.classList.contains('hull'));
+  const picked = shipAt(app.state.player, { x: Number(occupied.dataset.x), y: Number(occupied.dataset.y) });
+  occupied.click();
+
+  const held = [...root.querySelectorAll('.roster[data-side="player"] .roster-row.is-held')];
+  assert.equal(held.length, 1, 'exactly one row is marked as held');
+  assert.equal(held[0].dataset.ship, picked.name);
+  assert.equal(held[0].querySelector('.roster-status').textContent, 'IN HAND');
+  assert.ok(grid(root, 'player').classList.contains('placing'), 'the grid says a ship is in hand');
+});
+
+test('Escape puts a held ship back exactly where it came from', () => {
+  const { root, app, doc } = open(11);
+
+  const occupied = squares(root, 'player').find((node) => node.classList.contains('hull'));
+  const picked = shipAt(app.state.player, { x: Number(occupied.dataset.x), y: Number(occupied.dataset.y) });
+  const before = picked.cells.map(labelOf);
+
+  occupied.click();
+  assert.equal(app.state.selected.name, picked.name);
+
+  doc.dispatchEvent(new doc.defaultView.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+  assert.equal(app.state.selected, null, 'nothing is in hand after Escape');
+  assert.equal(app.state.player.ships.length, FLEET.length);
+  const after = shipAt(app.state.player, picked.cells[0]);
+  assert.equal(after.name, picked.name);
+  assert.deepEqual(after.cells.map(labelOf), before, 'back on its old squares');
+  assert.equal(root.querySelector('.roster-row.is-held'), null);
 });
 
 test('the buttons on screen match the phase', () => {
@@ -196,6 +271,265 @@ test('an empty shot log says so rather than showing bare headings', () => {
     ['Turn', 'Who', 'Square', 'Result'],
   );
   assert.equal(root.querySelector('.log-scroll').style.getPropertyValue('--log-rows'), '6');
+});
+
+/* Firing and the turn loop ------------------------------------------- */
+
+test('firing an enemy square records exactly one shot, and firing it again records nothing', () => {
+  const { root, app, timers } = play(2);
+
+  const target = square(root, 'enemy', 'D5');
+  target.click();
+  target.click(); // a fast double click, on the node the finger already had
+
+  assert.equal(app.state.enemy.shots.size, 1);
+  assert.deepEqual(shotsBy(app.state, 'player').map((entry) => entry.square), ['D5']);
+
+  timers.flush();
+
+  const fired = square(root, 'enemy', 'D5');
+  assert.equal(fired.disabled, true, 'a spent square is disabled, not merely ignored');
+  fired.click();
+  assert.equal(app.state.enemy.shots.size, 1, 'clicking it again costs nothing');
+  assert.equal(shotsBy(app.state, 'player').length, 1, 'and takes no turn');
+});
+
+test('a rapid second and third click during the computer’s turn do nothing', () => {
+  const { root, app, timers } = play(4);
+
+  const [a, b, c] = squares(root, 'enemy').filter((node) => !node.disabled);
+  a.click();
+  b.click();
+  c.click();
+
+  assert.equal(app.state.enemy.shots.size, 1, 'only the first click fired');
+  assert.equal(app.state.turn, 1);
+  assert.ok(app.state.busy, 'input is locked from the moment the shot resolves');
+  assert.ok(squares(root, 'enemy').every((node) => node.disabled), 'the whole enemy grid is shut');
+  assert.equal(timers.waiting, 1, 'exactly one reply is queued');
+
+  timers.flush();
+  assert.equal(app.state.turn, 2);
+  assert.ok(!app.state.busy, 'unlocked once the reply is drawn');
+});
+
+test('the turn counter increments once per shot and the log alternates', () => {
+  const { root, app, timers } = play(6);
+
+  for (let i = 0; i < 8; i += 1) {
+    firstEnabled(root, 'enemy').click();
+    timers.flush();
+  }
+
+  assert.equal(app.state.turn, 16);
+  assert.deepEqual(
+    app.state.log.map((entry) => entry.turn),
+    Array.from({ length: 16 }, (_, i) => i + 1),
+  );
+  assert.deepEqual(
+    app.state.log.map((entry) => entry.who),
+    Array.from({ length: 16 }, (_, i) => (i % 2 === 0 ? 'player' : 'enemy')),
+  );
+
+  // Newest first on screen, so the top row is the computer's latest shot.
+  const rows = [...root.querySelectorAll('.log-table tbody tr')];
+  assert.equal(rows[0].querySelector('.log-turn').textContent, '16');
+  assert.equal(rows[0].querySelector('.log-who').textContent, 'Enemy');
+  assert.equal(rows[1].querySelector('.log-who').textContent, 'You');
+});
+
+test('the amber ring follows the newest shot, one per grid', () => {
+  const { root, app, timers } = play(8);
+
+  square(root, 'enemy', 'C3').click();
+  timers.flush();
+
+  const ringed = (side) => squares(root, side).filter((node) => node.classList.contains('newest'));
+  assert.equal(ringed('enemy').length, 1);
+  assert.equal(ringed('enemy')[0].dataset.square, 'C3');
+  assert.equal(ringed('player').length, 1, 'their shot is ringed on your grid');
+  assert.equal(ringed('player')[0].dataset.square, shotsBy(app.state, 'enemy').at(-1).square);
+
+  square(root, 'enemy', 'H8').click();
+  timers.flush();
+
+  assert.equal(ringed('enemy').length, 1, 'the old ring is gone');
+  assert.equal(ringed('enemy')[0].dataset.square, 'H8');
+  assert.equal(ringed('player')[0].dataset.square, shotsBy(app.state, 'enemy').at(-1).square);
+});
+
+test('sinking an enemy ship updates the roster, the count and the grid', () => {
+  const { root, app, timers } = play(9);
+
+  const target = app.state.enemy.ships.find((ship) => ship.name === 'Destroyer');
+  for (const cell of target.cells) {
+    square(root, 'enemy', labelOf(cell)).click();
+    // The banner names the ship before the computer replies over the top of it.
+    if (cell === target.cells.at(-1)) {
+      assert.match(root.querySelector('#status').textContent, /You sank their Destroyer!/);
+    }
+    timers.flush();
+  }
+
+  const row = root.querySelector('.roster[data-side="enemy"] .roster-row[data-ship="Destroyer"]');
+  assert.ok(row.classList.contains('is-sunk'));
+  assert.equal(row.querySelector('.roster-status').textContent, 'SUNK');
+  assert.equal(row.querySelectorAll('.roster-block.is-hit').length, target.size);
+  assert.equal(root.querySelector('.roster[data-side="enemy"] .roster-count').textContent, '1 of 5 sunk');
+
+  // A sunk enemy ship is revealed: grey hull on a pink wash.
+  for (const cell of target.cells) {
+    const node = square(root, 'enemy', labelOf(cell));
+    assert.ok(node.classList.contains('hull-sunk'), `${labelOf(cell)} shows the hull`);
+    assert.ok(node.classList.contains('sunk'));
+    assert.match(node.getAttribute('aria-label'), /Destroyer sunk$/);
+  }
+
+  const badge = root.querySelector('.log-table tbody .badge.is-sank');
+  assert.equal(badge.textContent, 'SANK DESTROYER');
+
+  // Ships that are still afloat stay hidden.
+  const afloat = app.state.enemy.ships.find((ship) => ship.hits.size === 0);
+  assert.equal(square(root, 'enemy', labelOf(afloat.cells[0])).classList.contains('hull'), false);
+});
+
+test('the player cannot fire on their own grid or move ships once play has started', () => {
+  const { root, app } = play(10);
+
+  assert.ok(squares(root, 'player').every((node) => node.disabled));
+
+  const before = app.state.player.ships.map((ship) => ship.cells.map(labelOf).join(''));
+  squares(root, 'player')[0].click();
+
+  assert.equal(app.state.selected, null, 'no pickups mid-game');
+  assert.equal(app.state.player.shots.size, 0, 'and no firing at your own fleet');
+  assert.deepEqual(app.state.player.ships.map((ship) => ship.cells.map(labelOf).join('')), before);
+});
+
+test('a queued computer shot is cancelled rather than landing on a fresh board', () => {
+  const { root, app, timers } = play(12);
+
+  firstEnabled(root, 'enemy').click();
+  assert.equal(timers.waiting, 1);
+
+  app.cancelTimers();
+  timers.flush();
+
+  assert.equal(app.state.turn, 1, 'the cancelled reply never fired');
+  assert.equal(app.state.player.shots.size, 0);
+});
+
+test('their roster shows no damage on a ship until it sinks', () => {
+  for (let seed = 1; seed <= 20; seed += 1) {
+    const { root, app, timers } = play(seed);
+    const rng = createSeededRng(seed + 900);
+
+    for (let shot = 0; shot < 40 && !isFleetSunk(app.state.enemy); shot += 1) {
+      const open = squares(root, 'enemy').filter((node) => !node.disabled);
+      open[Math.floor(rng() * open.length)].click();
+      timers.flush();
+
+      for (const ship of app.state.enemy.ships) {
+        const row = root.querySelector(`.roster[data-side="enemy"] .roster-row[data-ship="${ship.name}"]`);
+        const sunk = ship.hits.size === ship.size;
+        const shown = row.querySelectorAll('.roster-block.is-hit').length;
+
+        if (sunk) {
+          assert.equal(shown, ship.size, `seed ${seed}: a sunk ${ship.name} should be all red`);
+          assert.equal(row.querySelector('.roster-status').textContent, 'SUNK');
+        } else {
+          assert.equal(shown, 0, `seed ${seed}: ${ship.name} leaks ${ship.hits.size} hits before sinking`);
+          assert.equal(row.querySelector('.roster-status').textContent, 'afloat');
+        }
+      }
+
+      // The total is fair game: it says nothing about which ship was hit.
+      const landed = app.state.enemy.ships.reduce((total, ship) => total + ship.hits.size, 0);
+      const line = root.querySelector('.roster[data-side="enemy"] .roster-hits').textContent;
+      assert.equal(line, `${landed} hit${landed === 1 ? '' : 's'} landed`);
+    }
+
+    // Your own fleet is yours to see, so it keeps per-ship damage.
+    const damaged = app.state.player.ships.find((ship) => ship.hits.size > 0 && ship.hits.size < ship.size);
+    if (damaged) {
+      const row = root.querySelector(`.roster[data-side="player"] .roster-row[data-ship="${damaged.name}"]`);
+      assert.equal(row.querySelectorAll('.roster-block.is-hit').length, damaged.hits.size);
+      assert.equal(row.querySelector('.roster-status').textContent, `${damaged.size - damaged.hits.size} left`);
+    }
+
+    app.destroy();
+  }
+});
+
+test('a focused square and the newest-shot square are told apart', () => {
+  const { root, doc, dom, app, timers } = play(14);
+
+  square(root, 'enemy', 'E4').click();
+  timers.flush();
+
+  const newest = grid(root, 'enemy').querySelector('.square.newest');
+  const focused = square(root, 'enemy', 'H8');
+  focused.focus();
+
+  assert.equal(newest.dataset.square, 'E4');
+  assert.equal(doc.activeElement, focused);
+  assert.ok(!focused.classList.contains('newest'), 'the two are different squares here');
+  assert.equal(grid(root, 'enemy').querySelectorAll('.square.newest').length, 1);
+
+  // The two rings must not look alike: different colour and different stroke.
+  const style = doc.createElement('style');
+  style.textContent = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+  doc.head.append(style);
+
+  const rules = [...style.sheet.cssRules];
+  const outlineOf = (selector) => {
+    const rule = rules.find((entry) => entry.selectorText === selector);
+    assert.ok(rule, `${selector} has no rule`);
+    return {
+      colour: rule.style.getPropertyValue('outline-color') || rule.style.getPropertyValue('outline'),
+      style: rule.style.getPropertyValue('outline-style') || rule.style.getPropertyValue('outline'),
+      offset: rule.style.getPropertyValue('outline-offset'),
+    };
+  };
+
+  const focus = outlineOf('.square:focus-visible');
+  const ring = outlineOf('.square.newest');
+  const colourOf = (declaration) => /var\((--[a-z-]+)\)/.exec(declaration.colour)?.[1];
+
+  assert.notEqual(colourOf(focus), colourOf(ring), 'focus and the newest shot share a colour');
+  assert.match(focus.style, /dashed/);
+  assert.match(ring.style, /solid/);
+  assert.ok(focus.offset.startsWith('-') === false && ring.offset.startsWith('-'), 'focus sits outside, the ring inside');
+
+  dom.window.close();
+  app.destroy();
+});
+
+test('200 games played through the interface never repeat a shot, overrun or crash', () => {
+  for (let seed = 1; seed <= 200; seed += 1) {
+    const { root, app, timers } = play(seed);
+    const rng = createSeededRng(seed + 5000);
+
+    let rounds = 0;
+    while (!isFleetSunk(app.state.enemy) && !isFleetSunk(app.state.player)) {
+      const open = squares(root, 'enemy').filter((node) => !node.disabled);
+      assert.ok(open.length > 0, `seed ${seed}: nowhere left to fire`);
+      open[Math.floor(rng() * open.length)].click();
+      timers.flush();
+
+      rounds += 1;
+      assert.ok(rounds <= 100, `seed ${seed}: ran past 100 rounds`);
+    }
+
+    const mine = shotsBy(app.state, 'player');
+    const theirs = shotsBy(app.state, 'enemy');
+    assert.equal(new Set(mine.map((entry) => entry.square)).size, mine.length, `seed ${seed}: repeated a shot`);
+    assert.equal(new Set(theirs.map((entry) => entry.square)).size, theirs.length, `seed ${seed}: computer repeated a shot`);
+    assert.ok(mine.length <= 100 && theirs.length <= 100, `seed ${seed}: more than 100 shots`);
+    assert.equal(app.state.turn, mine.length + theirs.length, `seed ${seed}: turn counter drifted`);
+
+    app.destroy();
+  }
 });
 
 function labelOf({ x, y }) {

@@ -7,7 +7,7 @@
  */
 
 import { BOARD_SIZE, FLEET, HIT, MISS, isShipSunk, shipAt, toLabel } from '../rules.js';
-import { PLAYING, SETUP } from './state.js';
+import { PLAYING, SETUP, canPlayerFire } from './state.js';
 
 const COLUMNS = 'ABCDEFGHIJ';
 const LOG_ROWS_VISIBLE = 6;
@@ -101,10 +101,13 @@ function buildGrid(doc, state, side, handlers) {
   const board = isPlayer ? state.player : state.enemy;
   const revealShips = isPlayer;
   const newest = state.lastShot[side];
-  const disabled = isPlayer ? state.phase !== SETUP : state.phase !== PLAYING;
+  // Own ships move during setup only; the enemy grid opens up on your turn
+  // and shuts again the moment your shot lands.
+  const closed = isPlayer ? state.phase !== SETUP : !canPlayerFire(state);
 
   const grid = el(doc, 'div', 'grid');
   grid.dataset.side = side;
+  if (state.selected && isPlayer) grid.classList.add('placing');
 
   grid.append(el(doc, 'div', 'ruler corner'));
   for (let x = 0; x < BOARD_SIZE; x += 1) grid.append(el(doc, 'div', 'ruler', COLUMNS[x]));
@@ -120,6 +123,10 @@ function buildGrid(doc, state, side, handlers) {
       button.dataset.square = toLabel(square);
       button.dataset.x = String(x);
       button.dataset.y = String(y);
+      // A square already fired at can never be acted on: disable it rather
+      // than let a keyboard user tab through dead controls.
+      const spent = !isPlayer && view.shot !== null;
+      const disabled = closed || spent;
       button.disabled = disabled;
       button.setAttribute('aria-label', squareLabel(view, square, { revealShips }));
 
@@ -178,13 +185,22 @@ function buildLegend(doc) {
 /**
  * A roster row shows the ship's real length as blocks, so a player who
  * has never heard of a Cruiser can still see it is three squares long.
+ *
+ * Damage is only drawn for a fleet whose board you may see. You learn which
+ * enemy ship you hit when it sinks, not before, so an enemy row stays intact
+ * until then — otherwise the roster tells you what the grid deliberately does not.
  */
-function buildRosterRow(doc, board, { name, size }) {
+function buildRosterRow(doc, board, { name, size }, { held = false, damage = true } = {}) {
   const ship = board.ships.find((placed) => placed.name === name) ?? null;
   const sunk = ship ? isShipSunk(ship) : false;
-  const hits = ship ? ship.hits.size : 0;
+  const hits = damage && ship ? ship.hits.size : 0;
 
-  const row = el(doc, 'li', sunk ? 'roster-row is-sunk' : 'roster-row');
+  const classes = ['roster-row'];
+  if (sunk) classes.push('is-sunk');
+  // The banner is a long way from the grid, so say it here too.
+  if (held) classes.push('is-held');
+
+  const row = el(doc, 'li', classes.join(' '));
   row.dataset.ship = name;
   row.append(el(doc, 'span', 'roster-name', name));
 
@@ -195,11 +211,12 @@ function buildRosterRow(doc, board, { name, size }) {
   }
   row.append(blocks);
 
-  row.append(el(doc, 'span', 'roster-status', sunk ? 'SUNK' : `${size - hits} left`));
+  const status = held ? 'IN HAND' : sunk ? 'SUNK' : damage ? `${size - hits} left` : 'afloat';
+  row.append(el(doc, 'span', 'roster-status', status));
   return row;
 }
 
-function buildRoster(doc, board, { title, side }) {
+function buildRoster(doc, board, { title, side, held = null, damage = true }) {
   const lost = board.ships.filter(isShipSunk).length;
   const column = el(doc, 'section', 'roster');
   column.dataset.side = side;
@@ -216,8 +233,14 @@ function buildRoster(doc, board, { title, side }) {
   );
   column.append(heading);
 
+  // Which enemy ships are damaged stays hidden; how many hits have landed does not.
+  if (!damage) {
+    const landed = board.ships.reduce((total, ship) => total + ship.hits.size, 0);
+    column.append(el(doc, 'p', 'roster-hits', `${landed} hit${landed === 1 ? '' : 's'} landed`));
+  }
+
   const list = el(doc, 'ul', 'roster-list');
-  for (const ship of FLEET) list.append(buildRosterRow(doc, board, ship));
+  for (const ship of FLEET) list.append(buildRosterRow(doc, board, ship, { held: ship.name === held, damage }));
   column.append(list);
 
   return column;
@@ -328,8 +351,14 @@ export function render(root, state, handlers = {}) {
   root.append(buildLegend(doc));
 
   const rosters = el(doc, 'div', 'rosters');
-  rosters.append(buildRoster(doc, state.player, { title: 'YOUR SHIPS', side: PLAYER }));
-  rosters.append(buildRoster(doc, state.enemy, { title: 'THEIR SHIPS', side: ENEMY }));
+  rosters.append(
+    buildRoster(doc, state.player, {
+      title: 'YOUR SHIPS',
+      side: PLAYER,
+      held: state.selected?.name ?? null,
+    }),
+  );
+  rosters.append(buildRoster(doc, state.enemy, { title: 'THEIR SHIPS', side: ENEMY, damage: false }));
   root.append(rosters);
 
   const bottom = el(doc, 'div', 'bottom');
