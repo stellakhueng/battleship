@@ -70,8 +70,25 @@ export function pickUpShip(state, square) {
   }
 
   removeShip(state.player, ship.name);
-  state.selected = { name: ship.name, size: ship.size, orientation: ship.orientation };
-  state.message = `${ship.name} picked up. Click a square to put it down; it turns if it will not fit.`;
+  state.selected = {
+    name: ship.name,
+    size: ship.size,
+    orientation: ship.orientation,
+    /** Where it came from, so Escape can put it back untouched. */
+    origin: { ...ship.cells[0] },
+  };
+  state.message = `${ship.name} picked up. Click a square to put it down, or press Escape to leave it where it was.`;
+  return state;
+}
+
+/** Put the held ship back exactly where it was picked up from. */
+export function cancelPickup(state) {
+  if (!state.selected) return state;
+
+  const { name, size, orientation, origin } = state.selected;
+  placeShip(state.player, { name, size, ...origin, orientation });
+  state.selected = null;
+  state.message = `${name} put back. ${READY}`;
   return state;
 }
 

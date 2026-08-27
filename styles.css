@@ -120,6 +120,7 @@ body {
 }
 
 /* A ship is in hand: the next click on your own grid puts it down. */
+.grid.placing,
 .square.placing {
   cursor: crosshair;
 }
@@ -301,6 +302,26 @@ body {
 
 .roster-row.is-sunk .roster-name {
   text-decoration: line-through;
+}
+
+/* The held ship, marked where the eye already is rather than only in the banner. */
+.roster-row.is-held {
+  outline: 2px solid var(--newest);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.roster-row.is-held .roster-name {
+  font-weight: 700;
+}
+
+.roster-row.is-held .roster-block {
+  background: var(--newest);
+}
+
+.roster-row.is-held .roster-status {
+  color: var(--newest);
+  font-weight: 700;
 }
 
 .roster-blocks {

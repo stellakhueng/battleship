@@ -117,6 +117,40 @@ test('clicking one of your ships picks it up instead of adding a second copy', (
   assert.equal(root.querySelector('#start').disabled, false);
 });
 
+test('a held ship is marked on its roster row and the grid, not only in the banner', () => {
+  const { root, app } = open(11);
+
+  const occupied = squares(root, 'player').find((node) => node.classList.contains('hull'));
+  const picked = shipAt(app.state.player, { x: Number(occupied.dataset.x), y: Number(occupied.dataset.y) });
+  occupied.click();
+
+  const held = [...root.querySelectorAll('.roster[data-side="player"] .roster-row.is-held')];
+  assert.equal(held.length, 1, 'exactly one row is marked as held');
+  assert.equal(held[0].dataset.ship, picked.name);
+  assert.equal(held[0].querySelector('.roster-status').textContent, 'IN HAND');
+  assert.ok(grid(root, 'player').classList.contains('placing'), 'the grid says a ship is in hand');
+});
+
+test('Escape puts a held ship back exactly where it came from', () => {
+  const { root, app, doc } = open(11);
+
+  const occupied = squares(root, 'player').find((node) => node.classList.contains('hull'));
+  const picked = shipAt(app.state.player, { x: Number(occupied.dataset.x), y: Number(occupied.dataset.y) });
+  const before = picked.cells.map(labelOf);
+
+  occupied.click();
+  assert.equal(app.state.selected.name, picked.name);
+
+  doc.dispatchEvent(new doc.defaultView.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+  assert.equal(app.state.selected, null, 'nothing is in hand after Escape');
+  assert.equal(app.state.player.ships.length, FLEET.length);
+  const after = shipAt(app.state.player, picked.cells[0]);
+  assert.equal(after.name, picked.name);
+  assert.deepEqual(after.cells.map(labelOf), before, 'back on its old squares');
+  assert.equal(root.querySelector('.roster-row.is-held'), null);
+});
+
 test('the buttons on screen match the phase', () => {
   const { root } = open();
 

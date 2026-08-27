@@ -4,7 +4,7 @@
  * yet, so a click on the enemy grid does nothing for now.
  */
 
-import { createGame, handlePlayerSquare, scatterFleet, startGame } from './state.js';
+import { cancelPickup, createGame, handlePlayerSquare, scatterFleet, startGame } from './state.js';
 import { render } from './view.js';
 
 export function mount(root, { rng } = {}) {
@@ -34,9 +34,24 @@ export function mount(root, { rng } = {}) {
     render(root, state, handlers);
   }
 
+  /** Escape drops a pickup: a held ship goes back where it came from. */
+  function onKeyDown(event) {
+    if (event.key !== 'Escape' || !state.selected) return;
+    event.preventDefault();
+    cancelPickup(state);
+    draw();
+  }
+
+  const doc = root.ownerDocument;
+  doc.addEventListener('keydown', onKeyDown);
+
   draw();
   return {
     draw,
+    /** Detach from the document; nothing should outlive the interface. */
+    destroy() {
+      doc.removeEventListener('keydown', onKeyDown);
+    },
     get state() {
       return state;
     },
