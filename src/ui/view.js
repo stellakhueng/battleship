@@ -373,10 +373,7 @@ function buildControls(doc, state, handlers) {
  */
 export function render(root, state, handlers = {}) {
   const doc = root.ownerDocument;
-  const focused = doc.activeElement;
-  const focusedSquare = focused?.dataset?.square
-    ? { side: focused.closest('.grid')?.dataset.side, square: focused.dataset.square }
-    : null;
+  const was = whereTheKeyboardIs(root, doc);
 
   root.replaceChildren();
   root.classList.add('app');
@@ -414,12 +411,87 @@ export function render(root, state, handlers = {}) {
   bottom.append(buildControls(doc, state, handlers));
   root.append(bottom);
 
-  if (focusedSquare) {
-    const again = root.querySelector(
-      `.grid[data-side="${focusedSquare.side}"] .square[data-square="${focusedSquare.square}"]`,
-    );
-    if (again && !again.disabled) again.focus();
-  }
+  if (was) restoreFocus(root, was);
 
   return root;
+}
+
+const keyboardMemory = new WeakMap();
+
+/**
+ * Where the keyboard is, or was before a redraw dropped it. Every redraw
+ * replaces the whole screen, so the element holding focus is destroyed:
+ * the square just fired at, or the button just pressed. Without a memory
+ * the browser drops focus on the body and a keyboard player starts each
+ * move again from the top of the page.
+ */
+function whereTheKeyboardIs(root, doc) {
+  const focused = doc.activeElement;
+  const remember = (where) => {
+    keyboardMemory.set(root, where);
+    return where;
+  };
+
+  if (focused?.dataset?.square) {
+    return remember({
+      kind: 'square',
+      side: focused.closest('.grid')?.dataset.side,
+      square: focused.dataset.square,
+    });
+  }
+  if (focused?.classList?.contains('control')) {
+    return remember({ kind: 'control', id: focused.id });
+  }
+  if (focused && focused !== doc.body && focused !== doc.documentElement) {
+    keyboardMemory.delete(root);
+    return null;
+  }
+  return keyboardMemory.get(root) ?? null;
+}
+
+function restoreFocus(root, where) {
+  if (where.kind === 'control') restoreControlFocus(root, where.id);
+  else restoreSquareFocus(root, where);
+}
+
+/**
+ * Pressing a button destroys it: Start is replaced by New game, Scatter
+ * by a redrawn Scatter. Focus goes to the same button if it is still
+ * there, and to whatever replaced it if it is not — never to the body,
+ * a hundred squares away from the controls.
+ */
+function restoreControlFocus(root, id) {
+  const controls = root.querySelector('.controls');
+  if (!controls) return;
+
+  const again = id ? controls.querySelector(`#${id}`) : null;
+  const target = again && !again.disabled ? again : [...controls.querySelectorAll('.control')].find((node) => !node.disabled);
+  target?.focus();
+}
+
+/**
+ * The square just fired at is disabled afterwards, so falling back to the
+ * nearest live square on the same grid is the difference between firing
+ * again and tabbing past a hundred controls to get there.
+ */
+function restoreSquareFocus(root, { side, square: label }) {
+  const grid = root.querySelector(`.grid[data-side="${side}"]`);
+  if (!grid) return;
+
+  const all = [...grid.querySelectorAll('.square')];
+  const at = all.findIndex((node) => node.dataset.square === label);
+  if (at === -1) return;
+
+  if (!all[at].disabled) {
+    all[at].focus();
+    return;
+  }
+
+  for (let step = 1; step < all.length; step += 1) {
+    const near = [all[at + step], all[at - step]].find((node) => node && !node.disabled);
+    if (near) {
+      near.focus();
+      return;
+    }
+  }
 }
