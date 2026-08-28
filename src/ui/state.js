@@ -167,10 +167,12 @@ function endGame(state, winner) {
   state.phase = OVER;
   state.winner = winner;
   state.busy = false;
+  // The result panel carries the outcome and the counts; the banner says
+  // what just happened, so the two are not the same sentence twice.
   state.message =
     winner === PLAYER
-      ? `You won in ${state.shots.player} shots. Computer: ${state.shots.enemy}.`
-      : `You lost. The computer won in ${state.shots.enemy} shots. You: ${state.shots.player}.`;
+      ? 'That was their last ship. Game over.'
+      : 'That was your last ship. Game over.';
   return state;
 }
 

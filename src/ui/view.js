@@ -156,7 +156,12 @@ function buildBoard(doc, state, side, handlers) {
 
   const heading = el(doc, 'div', 'board-heading');
   heading.append(el(doc, 'h2', null, isPlayer ? 'Your fleet' : 'Enemy fleet'));
-  heading.append(el(doc, 'p', 'subtitle', isPlayer ? 'Their shots land here' : 'Hidden until you hit it'));
+  const subtitle = isPlayer
+    ? 'Their shots land here'
+    : state.phase === OVER
+      ? 'All ships shown'
+      : 'Hidden until you hit it';
+  heading.append(el(doc, 'p', 'subtitle', subtitle));
   column.append(heading);
   column.append(buildGrid(doc, state, side, handlers));
 
@@ -383,8 +388,8 @@ export function render(root, state, handlers = {}) {
   status.setAttribute('role', 'status');
   root.append(status);
 
-  if (state.phase === OVER) root.append(buildResult(doc, state));
   if (state.phase !== SETUP) root.append(buildScoreboard(doc, state));
+  if (state.phase === OVER) root.append(buildResult(doc, state));
 
   const boards = el(doc, 'div', 'boards');
   boards.append(buildBoard(doc, state, PLAYER, handlers));

@@ -546,6 +546,16 @@ test('sinking their last ship wins the game on the spot', () => {
     `You won in ${app.state.shots.player} shots. Computer: ${app.state.shots.enemy}.`,
   );
 
+  // The banner does not repeat the sentence the result panel already carries.
+  const banner = root.querySelector('#status').textContent;
+  assert.equal(banner, 'That was their last ship. Game over.');
+  assert.notEqual(banner, result.querySelector('.result-detail').textContent);
+  assert.equal(
+    root.querySelector('.board-column:last-child .subtitle').textContent,
+    'All ships shown',
+    'the enemy grid no longer claims to be hidden',
+  );
+
   // The whole enemy fleet is shown, not only the ships that were sunk.
   for (const ship of app.state.enemy.ships) {
     for (const cell of ship.cells) {
@@ -566,7 +576,7 @@ test('the computer sinking your last ship ends the game and does not hand the tu
 
   const banner = root.querySelector('#status').textContent;
   assert.doesNotMatch(banner, /Your turn/, 'a loss does not hand the turn back');
-  assert.match(banner, /You lost\./);
+  assert.match(banner, /That was your last ship\. Game over\./);
   assert.equal(root.querySelector('#result .result-headline').textContent, 'The computer won');
   assert.equal(
     root.querySelector('#result .result-detail').textContent,
