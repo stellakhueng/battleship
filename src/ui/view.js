@@ -7,7 +7,7 @@
  */
 
 import { BOARD_SIZE, FLEET, HIT, MISS, isShipSunk, shipAt, toLabel } from '../rules.js';
-import { PLAYING, SETUP, canPlayerFire } from './state.js';
+import { OVER, SETUP, canPlayerFire } from './state.js';
 
 const COLUMNS = 'ABCDEFGHIJ';
 const LOG_ROWS_VISIBLE = 6;
@@ -99,7 +99,8 @@ function hullClasses(view, board, square) {
 function buildGrid(doc, state, side, handlers) {
   const isPlayer = side === PLAYER;
   const board = isPlayer ? state.player : state.enemy;
-  const revealShips = isPlayer;
+  // Once it is over the enemy fleet is shown, so you can see where it all was.
+  const revealShips = isPlayer || state.phase === OVER;
   const newest = state.lastShot[side];
   // Own ships move during setup only; the enemy grid opens up on your turn
   // and shuts again the moment your shot lands.
@@ -155,7 +156,12 @@ function buildBoard(doc, state, side, handlers) {
 
   const heading = el(doc, 'div', 'board-heading');
   heading.append(el(doc, 'h2', null, isPlayer ? 'Your fleet' : 'Enemy fleet'));
-  heading.append(el(doc, 'p', 'subtitle', isPlayer ? 'Their shots land here' : 'Hidden until you hit it'));
+  const subtitle = isPlayer
+    ? 'Their shots land here'
+    : state.phase === OVER
+      ? 'All ships shown'
+      : 'Hidden until you hit it';
+  heading.append(el(doc, 'p', 'subtitle', subtitle));
   column.append(heading);
   column.append(buildGrid(doc, state, side, handlers));
 
@@ -244,6 +250,45 @@ function buildRoster(doc, board, { title, side, held = null, damage = true }) {
   column.append(list);
 
   return column;
+}
+
+/** Shots fired so far, per side: in this game the count is the score. */
+function buildScoreboard(doc, state) {
+  const scoreboard = el(doc, 'div', 'scoreboard');
+  scoreboard.id = 'scoreboard';
+
+  for (const [side, label] of [[PLAYER, 'Your shots'], [ENEMY, 'Their shots']]) {
+    const item = el(doc, 'p', 'score');
+    item.dataset.side = side;
+    item.append(el(doc, 'span', 'score-label', label));
+    item.append(el(doc, 'span', 'score-value', String(state.shots[side])));
+    scoreboard.append(item);
+  }
+
+  return scoreboard;
+}
+
+/**
+ * The result. The shot counts are the point of it: the computer averages
+ * a little under 39, so the number says how well you did.
+ */
+function buildResult(doc, state) {
+  const won = state.winner === PLAYER;
+  const panel = el(doc, 'section', won ? 'result is-won' : 'result is-lost');
+  panel.id = 'result';
+  panel.setAttribute('role', 'status');
+  panel.append(el(doc, 'h2', 'result-headline', won ? 'You won' : 'The computer won'));
+  panel.append(
+    el(
+      doc,
+      'p',
+      'result-detail',
+      won
+        ? `You won in ${state.shots[PLAYER]} shots. Computer: ${state.shots[ENEMY]}.`
+        : `The computer won in ${state.shots[ENEMY]} shots. You: ${state.shots[PLAYER]}.`,
+    ),
+  );
+  return panel;
 }
 
 function resultBadge(doc, entry) {
@@ -342,6 +387,9 @@ export function render(root, state, handlers = {}) {
   status.id = 'status';
   status.setAttribute('role', 'status');
   root.append(status);
+
+  if (state.phase !== SETUP) root.append(buildScoreboard(doc, state));
+  if (state.phase === OVER) root.append(buildResult(doc, state));
 
   const boards = el(doc, 'div', 'boards');
   boards.append(buildBoard(doc, state, PLAYER, handlers));

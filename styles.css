@@ -57,6 +57,60 @@ body {
   color: var(--text);
 }
 
+/* Result and score --------------------------------------------------- */
+
+.result {
+  margin: 0 auto;
+  padding: 0.9rem 1.4rem;
+  max-width: 42rem;
+  text-align: center;
+  border-radius: 10px;
+  border: 2px solid var(--good);
+  background: #e3f3ec;
+}
+
+.result.is-lost {
+  border-color: var(--hit);
+  background: var(--sunk-wash);
+}
+
+.result-headline {
+  margin: 0;
+  font-size: 1.4rem;
+  letter-spacing: 0.04em;
+  color: var(--good);
+}
+
+.result.is-lost .result-headline {
+  color: var(--hit);
+}
+
+.result-detail {
+  margin: 0.25rem 0 0;
+  color: var(--text);
+}
+
+.scoreboard {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+}
+
+.score {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.score-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
 /* Grids ------------------------------------------------------------- */
 
 .boards,

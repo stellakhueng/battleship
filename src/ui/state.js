@@ -8,7 +8,8 @@
  * Turns alternate strictly, one shot each, counted by `turn`. While the
  * computer is thinking the state is `busy` and every player move is
  * refused here as well as disabled in the view, so a stray click cannot
- * steal a turn. The endgame is not built yet.
+ * steal a turn. A shot that sinks the last ship of a fleet ends the game
+ * there and then, in whichever direction it happened.
  */
 
 import {
@@ -20,6 +21,7 @@ import {
   canPlaceShip,
   fireAt,
   isFleetPlaced,
+  isFleetSunk,
   placeFleetRandomly,
   placeShip,
   removeShip,
@@ -30,6 +32,7 @@ import { createOpponent } from '../ai.js';
 
 export const SETUP = 'setup';
 export const PLAYING = 'playing';
+export const OVER = 'over';
 
 export const PLAYER = 'player';
 export const ENEMY = 'enemy';
@@ -51,6 +54,10 @@ export function createGame({ rng = Math.random } = {}) {
     log: [],
     /** One per shot, whoever fired it: the log reads 1 You, 2 Enemy, 3 You. */
     turn: 0,
+    /** Shots fired by each side, shown during play and in the result. */
+    shots: { player: 0, enemy: 0 },
+    /** Who lost their fleet first, once anyone has. */
+    winner: null,
     /** The computer is mid-turn; the player may not move. */
     busy: false,
     message: READY,
@@ -152,8 +159,26 @@ export function canPlayerFire(state) {
   return state.phase === PLAYING && !state.busy;
 }
 
+/**
+ * The last ship of a fleet has gone down. Nobody fires again: the phase
+ * shuts both grids in the view and refuses every move here.
+ */
+function endGame(state, winner) {
+  state.phase = OVER;
+  state.winner = winner;
+  state.busy = false;
+  // The result panel carries the outcome and the counts; the banner says
+  // what just happened, so the two are not the same sentence twice.
+  state.message =
+    winner === PLAYER
+      ? 'That was their last ship. Game over.'
+      : 'That was your last ship. Game over.';
+  return state;
+}
+
 function logShot(state, who, square, outcome) {
   state.turn += 1;
+  state.shots[who] += 1;
   state.lastShot[who === PLAYER ? ENEMY : PLAYER] = { ...square };
   state.log.push({
     turn: state.turn,
@@ -179,6 +204,12 @@ export function playerFire(state, square) {
   }
 
   logShot(state, PLAYER, square, outcome);
+
+  if (isFleetSunk(state.enemy)) {
+    endGame(state, PLAYER);
+    return outcome;
+  }
+
   // Locked from here until the computer's reply has been drawn.
   state.busy = true;
   state.message = outcome.sunk
@@ -208,6 +239,13 @@ export function enemyFire(state) {
   });
 
   logShot(state, ENEMY, square, outcome);
+
+  // A loss ends the game here rather than handing the turn back.
+  if (isFleetSunk(state.player)) {
+    endGame(state, ENEMY);
+    return outcome;
+  }
+
   state.busy = false;
   state.message = outcome.sunk
     ? `They sank your ${outcome.shipName}! Your turn.`
