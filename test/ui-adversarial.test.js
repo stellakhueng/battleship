@@ -482,6 +482,26 @@ test('a destroyed interface is inert: no shot, no timer, no state change', () =>
   assert.equal(timers.waiting, 0, 'a dead interface queued a reply nobody can cancel');
 });
 
+test('firing with the keyboard leaves the focus somewhere useful', () => {
+  const { doc, root, app, timers } = play(50);
+
+  const target = firstEnabled(root, 'enemy');
+  const where = target.dataset.square;
+  target.focus();
+  assert.equal(doc.activeElement.dataset.square, where);
+
+  target.click();
+  timers.flush();
+
+  const focused = doc.activeElement;
+  assert.notEqual(focused, doc.body, `focus fell off the page after firing at ${where}`);
+  assert.ok(
+    focused.closest?.('.grid[data-side="enemy"]'),
+    'focus left the enemy grid, so the next shot needs a tab through a hundred controls',
+  );
+  assert.equal(app.state.log.length, 2);
+});
+
 test('the enemy grid never names a ship it has not sunk', () => {
   const { root, app, timers } = play(46);
 

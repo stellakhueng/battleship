@@ -373,10 +373,7 @@ function buildControls(doc, state, handlers) {
  */
 export function render(root, state, handlers = {}) {
   const doc = root.ownerDocument;
-  const focused = doc.activeElement;
-  const focusedSquare = focused?.dataset?.square
-    ? { side: focused.closest('.grid')?.dataset.side, square: focused.dataset.square }
-    : null;
+  const focusedSquare = whereTheKeyboardIs(root, doc);
 
   root.replaceChildren();
   root.classList.add('app');
@@ -414,12 +411,57 @@ export function render(root, state, handlers = {}) {
   bottom.append(buildControls(doc, state, handlers));
   root.append(bottom);
 
-  if (focusedSquare) {
-    const again = root.querySelector(
-      `.grid[data-side="${focusedSquare.side}"] .square[data-square="${focusedSquare.square}"]`,
-    );
-    if (again && !again.disabled) again.focus();
-  }
+  if (focusedSquare) restoreFocus(root, focusedSquare);
 
   return root;
+}
+
+const keyboardMemory = new WeakMap();
+
+/**
+ * Which square the keyboard is on, or was on before a redraw dropped it.
+ * While the computer is thinking every enemy square is disabled, so the
+ * browser hands focus back to the body; without remembering, a keyboard
+ * player loses their place on every single shot.
+ */
+function whereTheKeyboardIs(root, doc) {
+  const focused = doc.activeElement;
+  if (focused?.dataset?.square) {
+    const here = { side: focused.closest('.grid')?.dataset.side, square: focused.dataset.square };
+    keyboardMemory.set(root, here);
+    return here;
+  }
+  if (focused && focused !== doc.body && focused !== doc.documentElement) {
+    keyboardMemory.delete(root);
+    return null;
+  }
+  return keyboardMemory.get(root) ?? null;
+}
+
+/**
+ * Put the keyboard back where it was. The square just fired at is disabled
+ * afterwards, so falling back to the nearest live square on the same grid
+ * is the difference between firing again and tabbing past a hundred
+ * controls to get there.
+ */
+function restoreFocus(root, { side, square: label }) {
+  const grid = root.querySelector(`.grid[data-side="${side}"]`);
+  if (!grid) return;
+
+  const all = [...grid.querySelectorAll('.square')];
+  const at = all.findIndex((node) => node.dataset.square === label);
+  if (at === -1) return;
+
+  if (!all[at].disabled) {
+    all[at].focus();
+    return;
+  }
+
+  for (let step = 1; step < all.length; step += 1) {
+    const near = [all[at + step], all[at - step]].find((node) => node && !node.disabled);
+    if (near) {
+      near.focus();
+      return;
+    }
+  }
 }
