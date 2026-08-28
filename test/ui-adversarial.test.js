@@ -502,6 +502,39 @@ test('firing with the keyboard leaves the focus somewhere useful', () => {
   assert.equal(app.state.log.length, 2);
 });
 
+test('pressing a button by keyboard leaves the focus on the controls', () => {
+  const { doc, root, app, timers } = open(51);
+
+  const press = (id) => {
+    const button = root.querySelector(`#${id}`);
+    button.focus();
+    button.click();
+    return doc.activeElement;
+  };
+
+  const afterScatter = press('scatter');
+  assert.notEqual(afterScatter, doc.body, 'Scatter dropped focus a hundred squares from the controls');
+  assert.equal(afterScatter.id, 'scatter', 'focus did not follow the redrawn Scatter button');
+
+  const afterStart = press('start');
+  assert.equal(app.state.phase, 'playing');
+  assert.notEqual(afterStart, doc.body, 'Start dropped focus');
+  assert.equal(afterStart.id, 'new-game', 'focus did not move to the button that replaced Start');
+
+  const afterNewGame = press('new-game');
+  assert.equal(app.state.phase, 'setup');
+  assert.notEqual(afterNewGame, doc.body, 'New game dropped focus');
+  assert.ok(['scatter', 'start'].includes(afterNewGame.id));
+
+  // And a redraw the player did not ask for must not steal focus back.
+  root.querySelector('#start').click();
+  firstEnabled(root, 'enemy').click();
+  const parked = root.querySelector('#new-game');
+  parked.focus();
+  timers.flush();
+  assert.equal(doc.activeElement.id, 'new-game', 'the computer’s reply pulled focus off the button');
+});
+
 test('the enemy grid never names a ship it has not sunk', () => {
   const { root, app, timers } = play(46);
 
