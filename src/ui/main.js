@@ -6,12 +6,13 @@
  * computer's reply is scheduled a beat later so the handoff is visible,
  * and the player is locked out in between. Every timer is tracked and
  * cancellable — a queued shot landing on a board that has been restarted
- * is exactly the bug part three would otherwise inherit.
+ * is exactly the bug New game would otherwise cause.
  */
 
 import {
   ENEMY,
   PLAYER,
+  PLAYING,
   cancelPickup,
   createGame,
   enemyFire,
@@ -72,11 +73,12 @@ export function mount(root, { rng, aiDelay = AI_DELAY, timers = globalThis } = {
   /**
    * One full round: the player's shot, then the computer's. A shot the
    * rules refuse returns null and costs nothing — no turn, no handoff.
+   * A shot that sinks their last ship ends the game, so nothing is queued.
    */
   function takeTurn(square) {
     const outcome = playerFire(state, square);
     draw();
-    if (!outcome) return;
+    if (!outcome || state.phase !== PLAYING) return;
 
     later(() => {
       enemyFire(state);
