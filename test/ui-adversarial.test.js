@@ -469,6 +469,19 @@ test('there is never more than one newest-shot ring on a grid', () => {
   assert.equal(marks(root, 'player').length, 0);
 });
 
+test('a destroyed interface is inert: no shot, no timer, no state change', () => {
+  const { root, app, timers } = play(49);
+
+  const target = firstEnabled(root, 'enemy');
+  app.destroy();
+
+  target.click();
+
+  assert.equal(app.state.log.length, 0, 'a dead interface still fired a shot');
+  assert.equal(drawn(app.state, 'enemy'), 0);
+  assert.equal(timers.waiting, 0, 'a dead interface queued a reply nobody can cancel');
+});
+
 test('the enemy grid never names a ship it has not sunk', () => {
   const { root, app, timers } = play(46);
 

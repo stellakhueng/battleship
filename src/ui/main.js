@@ -28,6 +28,8 @@ export const AI_DELAY = 700;
 
 export function mount(root, { rng, aiDelay = AI_DELAY, timers = globalThis } = {}) {
   let state = createGame({ rng });
+  /** Cleared by destroy(); buttons left in a detached tree stop responding. */
+  let live = true;
 
   /** Outstanding timers, so none can fire after the game moves on. */
   const pending = new Set();
@@ -48,6 +50,7 @@ export function mount(root, { rng, aiDelay = AI_DELAY, timers = globalThis } = {
 
   const handlers = {
     onSquare(side, square) {
+      if (!live) return;
       if (side === PLAYER) {
         handlePlayerSquare(state, square);
         draw();
@@ -56,14 +59,17 @@ export function mount(root, { rng, aiDelay = AI_DELAY, timers = globalThis } = {
       if (side === ENEMY) takeTurn(square);
     },
     onScatter() {
+      if (!live) return;
       scatterFleet(state);
       draw();
     },
     onStart() {
+      if (!live) return;
       startGame(state);
       draw();
     },
     onNewGame() {
+      if (!live) return;
       cancelTimers();
       state = createGame({ rng });
       draw();
@@ -107,6 +113,7 @@ export function mount(root, { rng, aiDelay = AI_DELAY, timers = globalThis } = {
     cancelTimers,
     /** Detach from the document; nothing should outlive the interface. */
     destroy() {
+      live = false;
       cancelTimers();
       doc.removeEventListener('keydown', onKeyDown);
     },
