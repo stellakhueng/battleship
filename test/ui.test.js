@@ -424,7 +424,7 @@ test('their roster shows no damage on a ship until it sinks', () => {
     const { root, app, timers } = play(seed);
     const rng = createSeededRng(seed + 900);
 
-    for (let shot = 0; shot < 40 && !isFleetSunk(app.state.enemy); shot += 1) {
+    for (let shot = 0; shot < 40 && app.state.phase === 'playing'; shot += 1) {
       const open = squares(root, 'enemy').filter((node) => !node.disabled);
       open[Math.floor(rng() * open.length)].click();
       timers.flush();
@@ -505,13 +505,173 @@ test('a focused square and the newest-shot square are told apart', () => {
   app.destroy();
 });
 
-test('200 games played through the interface never repeat a shot, overrun or crash', () => {
+/* The endgame --------------------------------------------------------- */
+
+/** Fire at every square the enemy fleet sits on, in order, and win. */
+function sinkTheirFleet({ root, app, timers }) {
+  for (const ship of [...app.state.enemy.ships]) {
+    for (const cell of ship.cells) {
+      square(root, 'enemy', labelOf(cell)).click();
+      timers.flush();
+    }
+  }
+}
+
+/** Fire only at open water, so the computer gets there first. */
+function loseTheGame({ root, app, timers }) {
+  const wet = (node) => !shipAt(app.state.enemy, { x: Number(node.dataset.x), y: Number(node.dataset.y) });
+
+  while (app.state.phase === 'playing') {
+    const target = squares(root, 'enemy').find((node) => !node.disabled && wet(node));
+    assert.ok(target, 'ran out of water to fire at');
+    target.click();
+    timers.flush();
+  }
+}
+
+test('sinking their last ship wins the game on the spot', () => {
+  const { root, app, timers } = play(21);
+
+  sinkTheirFleet({ root, app, timers });
+
+  assert.equal(app.state.phase, 'over');
+  assert.equal(app.state.winner, 'player');
+  assert.equal(timers.waiting, 0, 'no reply is queued after the winning shot');
+  assert.equal(app.state.shots.player, SHIP_SQUARES, 'seventeen shots, every one a hit');
+
+  const result = root.querySelector('#result');
+  assert.equal(result.querySelector('.result-headline').textContent, 'You won');
+  assert.equal(
+    result.querySelector('.result-detail').textContent,
+    `You won in ${app.state.shots.player} shots. Computer: ${app.state.shots.enemy}.`,
+  );
+
+  // The whole enemy fleet is shown, not only the ships that were sunk.
+  for (const ship of app.state.enemy.ships) {
+    for (const cell of ship.cells) {
+      assert.ok(square(root, 'enemy', labelOf(cell)).classList.contains('hull'), `${labelOf(cell)} is revealed`);
+    }
+  }
+});
+
+test('the computer sinking your last ship ends the game and does not hand the turn back', () => {
+  const { root, app, timers } = play(22);
+
+  loseTheGame({ root, app, timers });
+
+  assert.equal(app.state.winner, 'enemy');
+  assert.equal(timers.waiting, 0);
+  assert.ok(isFleetSunk(app.state.player));
+  assert.equal(shotsBy(app.state, 'enemy').at(-1).sunkShip !== null, true, 'the last shot was the sinking one');
+
+  const banner = root.querySelector('#status').textContent;
+  assert.doesNotMatch(banner, /Your turn/, 'a loss does not hand the turn back');
+  assert.match(banner, /You lost\./);
+  assert.equal(root.querySelector('#result .result-headline').textContent, 'The computer won');
+  assert.equal(
+    root.querySelector('#result .result-detail').textContent,
+    `The computer won in ${app.state.shots.enemy} shots. You: ${app.state.shots.player}.`,
+  );
+});
+
+test('no shot is possible on either grid once the game is over', () => {
+  for (const finish of [sinkTheirFleet, loseTheGame]) {
+    const game = play(23);
+    const { root, app, timers } = game;
+    finish(game);
+
+    assert.ok(squares(root, 'enemy').every((node) => node.disabled), 'the enemy grid is shut');
+    assert.ok(squares(root, 'player').every((node) => node.disabled), 'and so is yours');
+
+    const before = { turn: app.state.turn, mine: app.state.enemy.shots.size, theirs: app.state.player.shots.size };
+    for (const node of [...squares(root, 'enemy'), ...squares(root, 'player')].slice(0, 40)) node.click();
+    timers.flush();
+
+    assert.equal(app.state.turn, before.turn, 'nothing moved');
+    assert.equal(app.state.enemy.shots.size, before.mine);
+    assert.equal(app.state.player.shots.size, before.theirs);
+    app.destroy();
+  }
+});
+
+test('the shot counts on screen match the log, for both sides', () => {
+  const { root, app, timers } = play(24);
+
+  const shown = (side) => root.querySelector(`.scoreboard .score[data-side="${side}"] .score-value`).textContent;
+
+  for (let i = 0; i < 6; i += 1) {
+    firstEnabled(root, 'enemy').click();
+    // Counted the moment the shot lands, before the reply as well as after.
+    assert.equal(shown('player'), String(shotsBy(app.state, 'player').length));
+    assert.equal(shown('enemy'), String(shotsBy(app.state, 'enemy').length));
+    timers.flush();
+    assert.equal(shown('player'), String(shotsBy(app.state, 'player').length));
+    assert.equal(shown('enemy'), String(shotsBy(app.state, 'enemy').length));
+  }
+
+  assert.equal(shown('player'), '6');
+  assert.equal(shown('enemy'), '6');
+});
+
+test('New game clears the boards, the log, the counters and the computer’s memory', () => {
+  const { root, app, timers } = play(25);
+
+  for (let i = 0; i < 5; i += 1) {
+    firstEnabled(root, 'enemy').click();
+    timers.flush();
+  }
+
+  const oldLayout = app.state.enemy.ships.map((ship) => ship.cells.map(labelOf).join(''));
+  const remembered = app.state.opponent.knowledge.shots.size;
+  assert.ok(remembered > 0, 'the computer knows something to forget');
+
+  root.querySelector('#new-game').click();
+  const fresh = app.state;
+
+  assert.equal(fresh.phase, 'setup');
+  assert.equal(fresh.turn, 0);
+  assert.deepEqual(fresh.shots, { player: 0, enemy: 0 });
+  assert.equal(fresh.winner, null);
+  assert.deepEqual(fresh.log, []);
+  assert.equal(fresh.player.shots.size, 0);
+  assert.equal(fresh.enemy.shots.size, 0);
+  assert.deepEqual(fresh.lastShot, { player: null, enemy: null });
+  assert.equal(fresh.opponent.knowledge.shots.size, 0, 'a new opponent, with no memory of the last game');
+  assert.notDeepEqual(
+    fresh.enemy.ships.map((ship) => ship.cells.map(labelOf).join('')),
+    oldLayout,
+    'a fresh enemy layout',
+  );
+
+  assert.equal(root.querySelector('#result'), null, 'no result left on screen');
+  assert.equal(root.querySelector('#scoreboard'), null, 'and no counters during setup');
+  assert.equal(root.querySelector('.log-empty').textContent, 'No shots yet');
+  assert.equal(root.querySelectorAll('.square.newest').length, 0, 'no rings from the last game');
+  assert.ok(root.querySelector('#start'), 'back at setup, ready to start again');
+});
+
+test('a computer shot queued when New game is pressed never lands on the new board', () => {
+  const { root, app, timers } = play(26);
+
+  firstEnabled(root, 'enemy').click();
+  assert.equal(timers.waiting, 1, 'a reply is in flight');
+
+  root.querySelector('#new-game').click();
+  timers.flush();
+
+  assert.equal(app.state.turn, 0, 'the queued shot was cancelled, not merely ignored');
+  assert.equal(app.state.player.shots.size, 0);
+  assert.equal(app.state.log.length, 0);
+  assert.equal(app.state.phase, 'setup');
+});
+
+test('200 games played end to end finish with exactly one winner and no repeated shot', () => {
   for (let seed = 1; seed <= 200; seed += 1) {
     const { root, app, timers } = play(seed);
     const rng = createSeededRng(seed + 5000);
 
     let rounds = 0;
-    while (!isFleetSunk(app.state.enemy) && !isFleetSunk(app.state.player)) {
+    while (app.state.phase === 'playing') {
       const open = squares(root, 'enemy').filter((node) => !node.disabled);
       assert.ok(open.length > 0, `seed ${seed}: nowhere left to fire`);
       open[Math.floor(rng() * open.length)].click();
@@ -521,12 +681,29 @@ test('200 games played through the interface never repeat a shot, overrun or cra
       assert.ok(rounds <= 100, `seed ${seed}: ran past 100 rounds`);
     }
 
+    // Exactly one fleet went down, and the game agrees on whose.
+    const lost = [isFleetSunk(app.state.player), isFleetSunk(app.state.enemy)].filter(Boolean).length;
+    assert.equal(lost, 1, `seed ${seed}: ${lost} fleets sunk`);
+    assert.equal(app.state.phase, 'over', `seed ${seed}: the game did not end`);
+    assert.equal(
+      app.state.winner,
+      isFleetSunk(app.state.enemy) ? 'player' : 'enemy',
+      `seed ${seed}: wrong winner`,
+    );
+    assert.equal(timers.waiting, 0, `seed ${seed}: a shot was still queued after the end`);
+    assert.equal(root.querySelectorAll('#result').length, 1, `seed ${seed}: no result shown`);
+
     const mine = shotsBy(app.state, 'player');
     const theirs = shotsBy(app.state, 'enemy');
     assert.equal(new Set(mine.map((entry) => entry.square)).size, mine.length, `seed ${seed}: repeated a shot`);
     assert.equal(new Set(theirs.map((entry) => entry.square)).size, theirs.length, `seed ${seed}: computer repeated a shot`);
     assert.ok(mine.length <= 100 && theirs.length <= 100, `seed ${seed}: more than 100 shots`);
     assert.equal(app.state.turn, mine.length + theirs.length, `seed ${seed}: turn counter drifted`);
+    assert.deepEqual(
+      app.state.shots,
+      { player: mine.length, enemy: theirs.length },
+      `seed ${seed}: the counters disagree with the log`,
+    );
 
     app.destroy();
   }
